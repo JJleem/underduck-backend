@@ -88,19 +88,8 @@ class Roster(Base):
     memo: Mapped[str | None] = mapped_column(Text)
 
 
-class Stat(Base):
-    """stats 시트 = 시트 수식 산출물. 여기엔 스냅샷으로 이전(읽기전용).
-    ⚠️ 시트 폐기 후엔 matches/mom_vote에서 계산하는 endpoint로 대체 필요."""
-    __tablename__ = "stats"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    no: Mapped[str | None] = mapped_column(String(10))
-    name: Mapped[str | None] = mapped_column(String(100))
-    pos: Mapped[str | None] = mapped_column(String(20))
-    apps: Mapped[int | None] = mapped_column(Integer)
-    goals: Mapped[int | None] = mapped_column(Integer)
-    assists: Mapped[int | None] = mapped_column(Integer)
-    mom: Mapped[int | None] = mapped_column(Integer)
+# stats 테이블/모델은 폐기됨: stats는 routers/stats.py에서 matches·mom_vote로 실시간 집계.
+# (drop 마이그레이션: a3f1c2d4e5b6_drop_stats_table)
 
 
 class Notice(Base):

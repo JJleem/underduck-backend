@@ -7,7 +7,24 @@ on:
 
 # 필요한 레포 시크릿: LIGHTSAIL_HOST, LIGHTSAIL_KEY (cosmic-hustle와 동일 서버/키)
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
   deploy:
+    needs: test          # 테스트 통과해야만 배포
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

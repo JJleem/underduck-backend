@@ -71,7 +71,7 @@ def main() -> int:
         # 재실행 안전: 대상 테이블 전부 비우기
         for m in (models.MomVote, models.VoteComment, models.AttendanceVote,
                   models.Featured, models.PushSubscription, models.Match,
-                  models.Roster, models.Stat, models.Notice, models.Lineup,
+                  models.Roster, models.Notice, models.Lineup,
                   models.Feedback, models.User, models.Media):
             db.query(m).delete()
         db.commit()
@@ -136,12 +136,7 @@ def main() -> int:
                 for r in rows if any(c.strip() for c in r)]
         db.add_all(objs); counts["roster"] = len(objs)
 
-        # stats (수식 스냅샷)
-        rows = _fetch("stats")[1:]
-        objs = [models.Stat(no=_cell(r, 0), name=_cell(r, 1), pos=_cell(r, 2),
-                            apps=_int(r, 3), goals=_int(r, 4), assists=_int(r, 5), mom=_int(r, 6))
-                for r in rows if any(c.strip() for c in r)]
-        db.add_all(objs); counts["stats"] = len(objs)
+        # stats: 시드 안 함. stats는 matches·mom_vote에서 실시간 집계(routers/stats.py).
 
         # notice: 활성 공지 1건(시트 row2 = 첫 데이터행)
         rows = _fetch("notice")[1:]
