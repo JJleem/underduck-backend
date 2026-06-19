@@ -39,9 +39,27 @@ def upsert_attendance(body: schemas.AttendanceUpsert, db: Session = Depends(get_
     row.nickname = body.nickname.strip()
     row.response = body.response
     row.timestamp = datetime.now(timezone.utc)
+
+    # 투표 변경 시 matches.attendees(엔트리) 실시간 반영
+    _sync_attendees(body.match_id, db)
+
     db.commit()
     db.refresh(row)
     return row
+
+
+def _sync_attendees(match_id: int, db: Session):
+    """해당 match의 '참석' 투표자 닉네임을 matches.attendees에 동기화."""
+    m = db.get(Match, match_id)
+    if m is None:
+        return
+    rows = db.scalars(
+        select(AttendanceVote).where(
+            AttendanceVote.match_id == match_id,
+            AttendanceVote.response == "참석",
+        )
+    ).all()
+    m.attendees = ",".join(r.nickname.strip() for r in rows if r.nickname)
 
 
 @router.post("/{match_id}/finalize")
