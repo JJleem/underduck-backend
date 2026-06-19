@@ -1,0 +1,18 @@
+# /etc/systemd/system/underduck-backend.service
+# 설치:
+#   sudo cp deploy/underduck-backend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now underduck-backend
+[Unit]
+Description=Underduck Backend (FastAPI, :8001)
+After=network.target postgresql.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/underduck-backend
+ExecStart=/home/ubuntu/underduck-backend/.venv/bin/python run.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

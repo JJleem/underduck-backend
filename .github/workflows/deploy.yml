@@ -1,0 +1,38 @@
+name: Deploy Underduck Backend
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 필요한 레포 시크릿: LIGHTSAIL_HOST, LIGHTSAIL_KEY (cosmic-hustle와 동일 서버/키)
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_KEY }}
+          source: "."
+          target: "~/underduck-backend"
+          strip_components: 0
+          rm: false
+
+      - name: Install dependencies & restart service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_KEY }}
+          script: |
+            cd ~/underduck-backend
+            test -d .venv || python3 -m venv .venv
+            .venv/bin/pip install -r requirements.txt -q
+            .venv/bin/alembic upgrade head
+            sudo systemctl restart underduck-backend
+            echo "underduck-backend 재시작 완료"
