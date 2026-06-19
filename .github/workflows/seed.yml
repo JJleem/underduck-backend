@@ -1,0 +1,26 @@
+name: Seed DB from Google Sheets
+
+# 수동 실행 전용. 서버(~/underduck-backend)에서 scripts.import_sheets를 돌려
+# 시트 → Postgres 재적재(truncate+insert, 재실행 안전).
+# DB 주소(UNDERDUCK_DATABASE_URL)는 서버 .env에서 자동 로드(load_dotenv).
+#
+# 필요한 레포 시크릿: LIGHTSAIL_HOST, LIGHTSAIL_KEY (배포와 동일),
+#   GOOGLE_SHEET_ID, GOOGLE_SHEETS_API_KEY (시트 읽기용)
+on:
+  workflow_dispatch:
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run import_sheets on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_KEY }}
+          script: |
+            cd ~/underduck-backend
+            GOOGLE_SHEET_ID="${{ secrets.GOOGLE_SHEET_ID }}" \
+            GOOGLE_SHEETS_API_KEY="${{ secrets.GOOGLE_SHEETS_API_KEY }}" \
+            .venv/bin/python -m scripts.import_sheets
