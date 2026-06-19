@@ -1,0 +1,205 @@
+"""전 도메인 통합 테스트: 앱 전체를 SQLite in-memory로 띄워 실제 HTTP로 CRUD 검증.
+
+get_db 만 SQLite 세션으로 오버라이드한다(인증/라우팅/스키마/비즈니스로직은 실제 코드 경로).
+"""
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from db.connection import Base, get_db
+from main import app
+
+H = {"X-Underduck-Secret": "test-secret"}
+
+
+@pytest.fixture()
+def client():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    TestingSession = sessionmaker(bind=engine)
+    app.dependency_overrides[get_db] = lambda: TestingSession()
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def _make_match(client):
+    r = client.post("/api/underduck/matches", headers=H, json={
+        "date": "2026-06-01", "time": "10:00", "location": "구장",
+        "opponent": "상대팀", "type": "리그",
+    })
+    assert r.status_code == 201, r.text
+    return r.json()["match_id"]
+
+
+def test_auth_blocks_every_domain(client):
+    # 헤더 없으면 전부 401
+    for path in ["/matches", "/mom-vote", "/vote-comment", "/attendance",
+                 "/featured", "/push", "/roster", "/stats", "/notice",
+                 "/lineup", "/feedback", "/users", "/media"]:
+        assert client.get(f"/api/underduck{path}").status_code == 401, path
+
+
+def test_matches_crud_and_photos(client):
+    mid = _make_match(client)
+    assert mid == 0  # 첫 경기 = 0-based
+
+    r = client.patch(f"/api/underduck/matches/{mid}", headers=H, json={
+        "our_score": 3, "their_score": 1, "result": "승",
+        "goals": "홍길동,홍길동,김철수", "assists": "박영희,,", "mom": "홍길동",
+    })
+    assert r.status_code == 200 and r.json()["our_score"] == 3
+
+    # 사진 추가/중복무시/삭제
+    client.post(f"/api/underduck/matches/{mid}/photos", headers=H,
+                json={"urls": ["a.jpg", "a.jpg", "b.jpg"]})
+    r = client.get(f"/api/underduck/matches/{mid}", headers=H)
+    assert r.json()["photos"] == "a.jpg,b.jpg"
+    r = client.request("DELETE", f"/api/underduck/matches/{mid}/photos",
+                       headers=H, json={"url": "a.jpg"})
+    assert r.json()["photos"] == "b.jpg"
+
+    # 최대 5장 초과 거부
+    over = client.post(f"/api/underduck/matches/{mid}/photos", headers=H,
+                       json={"urls": ["c", "d", "e", "f", "g"]})
+    assert over.status_code == 400
+
+    assert client.get("/api/underduck/matches/999", headers=H).status_code == 404
+
+
+def test_roster(client):
+    r = client.post("/api/underduck/roster", headers=H, json={
+        "no": "7", "name": "홍길동", "pos": "FW", "status": "활동"})
+    assert r.status_code == 201
+    assert len(client.get("/api/underduck/roster", headers=H).json()) == 1
+
+
+def test_attendance_finalize(client):
+    mid = _make_match(client)
+    client.post("/api/underduck/attendance", headers=H, json={
+        "match_id": mid, "kakao_id": "k1", "nickname": "홍길동", "response": "참석"})
+    # upsert: 같은 (match,kakao) 다시 → 갱신
+    client.post("/api/underduck/attendance", headers=H, json={
+        "match_id": mid, "kakao_id": "k1", "nickname": "홍길동", "response": "불참"})
+    client.post("/api/underduck/attendance", headers=H, json={
+        "match_id": mid, "kakao_id": "k2", "nickname": "김철수", "response": "참석"})
+    rows = client.get(f"/api/underduck/attendance?match_id={mid}", headers=H).json()
+    assert len(rows) == 2  # k1은 upsert로 1건 유지
+
+    fin = client.post(f"/api/underduck/attendance/{mid}/finalize", headers=H).json()
+    assert fin["attendees"] == "김철수"  # 참석자만
+    m = client.get(f"/api/underduck/matches/{mid}", headers=H).json()
+    assert m["attendance_status"] == "마감" and m["attendees"] == "김철수"
+
+    st = client.patch(f"/api/underduck/attendance/{mid}/status", headers=H,
+                      json={"status": "진행중"})
+    assert st.json()["attendance_status"] == "진행중"
+
+
+def test_mom_vote(client):
+    client.post("/api/underduck/mom-vote", headers=H, json={
+        "match_id": 0, "voter_name": "a", "voted_for": "홍길동", "vote_type": "공격"})
+    client.post("/api/underduck/mom-vote", headers=H, json={
+        "match_id": 0, "voter_name": "a", "voted_for": "박영희", "vote_type": "수비"})
+    assert len(client.get("/api/underduck/mom-vote?match_id=0", headers=H).json()) == 2
+    # vote_type 지정 삭제
+    d = client.request("DELETE", "/api/underduck/mom-vote", headers=H,
+                       json={"match_id": 0, "voter_name": "a", "vote_type": "공격"})
+    assert d.json()["deleted"] == 1
+    assert len(client.get("/api/underduck/mom-vote", headers=H).json()) == 1
+
+
+def test_vote_comment(client):
+    r = client.post("/api/underduck/vote-comment", headers=H, json={
+        "match_id": 0, "kakao_id": "k1", "nickname": "홍", "message": "굿"})
+    cid = r.json()["id"]
+    assert client.get("/api/underduck/vote-comment", headers=H).json()[0]["message"] == "굿"
+    assert client.delete(f"/api/underduck/vote-comment/{cid}", headers=H).json()["deleted"] == 1
+
+
+def test_featured(client):
+    r = client.put("/api/underduck/featured", headers=H, json={
+        "player_name": "홍길동", "title_ids": ["t1", "t2"]})
+    assert r.json()["title_id1"] == "t1" and r.json()["title_id3"] is None
+    # 같은 선수 갱신
+    client.put("/api/underduck/featured", headers=H, json={
+        "player_name": "홍길동", "title_ids": ["x"]})
+    rows = client.get("/api/underduck/featured", headers=H).json()
+    assert len(rows) == 1 and rows[0]["title_id1"] == "x"
+
+
+def test_push(client):
+    client.post("/api/underduck/push", headers=H, json={
+        "endpoint": "https://e1", "p256dh": "p", "auth": "a"})
+    client.post("/api/underduck/push", headers=H, json={  # 같은 endpoint upsert
+        "endpoint": "https://e1", "p256dh": "p2", "auth": "a2"})
+    rows = client.get("/api/underduck/push", headers=H).json()
+    assert len(rows) == 1 and rows[0]["p256dh"] == "p2"
+    assert client.request("DELETE", "/api/underduck/push", headers=H,
+                          json={"endpoint": "https://e1"}).json()["deleted"] == 1
+
+
+def test_notice(client):
+    assert client.get("/api/underduck/notice", headers=H).json() is None
+    client.put("/api/underduck/notice", headers=H, json={
+        "date": "2026-06-01", "title": "공지", "content": "내용", "important": True})
+    n = client.get("/api/underduck/notice", headers=H).json()
+    assert n["title"] == "공지" and n["important"] is True
+    # 단일행 갱신(새 row 안 생김)
+    client.put("/api/underduck/notice", headers=H, json={
+        "date": "2026-06-02", "title": "공지2", "content": "c", "important": False})
+    assert client.get("/api/underduck/notice", headers=H).json()["title"] == "공지2"
+
+
+def test_lineup_upsert_and_delete(client):
+    body = {"match_id": 0, "quarter": "1Q", "formation": "4-4-2",
+            "players": ["p%d" % i for i in range(11)], "subs": ["s1"],
+            "substitutions": [{"out": "p1", "in": "s1", "time": "60"}]}
+    client.put("/api/underduck/lineup", headers=H, json=body)
+    rows = client.get("/api/underduck/lineup?match_id=0", headers=H).json()
+    assert len(rows) == 1 and rows[0]["formation"] == "4-4-2"
+    assert rows[0]["substitutions"][0]["in"] == "s1"
+    # 빈 라인업 → 삭제 시맨틱
+    empty = {"match_id": 0, "quarter": "1Q", "formation": "", "players": [],
+             "subs": [], "substitutions": []}
+    assert client.put("/api/underduck/lineup", headers=H, json=empty).json()["deleted"] is True
+    assert client.get("/api/underduck/lineup?match_id=0", headers=H).json() == []
+
+
+def test_feedback(client):
+    r = client.post("/api/underduck/feedback", headers=H, json={
+        "match_id": 0, "name": "홍", "message": "수고"})
+    fid = r.json()["id"]
+    assert client.get("/api/underduck/feedback", headers=H).json()[0]["message"] == "수고"
+    assert client.delete(f"/api/underduck/feedback/{fid}", headers=H).json()["deleted"] == 1
+    assert client.delete("/api/underduck/feedback/999", headers=H).status_code == 404
+
+
+def test_users(client):
+    client.post("/api/underduck/users", headers=H, json={
+        "kakao_id": "k1", "nickname": "홍", "profile_image": "img"})
+    # upsert: last_login 갱신, 중복 생성 없음
+    client.post("/api/underduck/users", headers=H, json={
+        "kakao_id": "k1", "nickname": "길동", "profile_image": "img2"})
+    assert len(client.get("/api/underduck/users", headers=H).json()) == 1
+    assert client.get("/api/underduck/users/k1", headers=H).json()["nickname"] == "길동"
+    assert client.get("/api/underduck/users/none", headers=H).status_code == 404
+
+
+def test_media(client):
+    r = client.post("/api/underduck/media", headers=H, json={
+        "type": "image", "url": "https://u1", "title": "t"})
+    mid = r.json()["id"]
+    assert len(client.get("/api/underduck/media", headers=H).json()) == 1
+    assert client.delete(f"/api/underduck/media/{mid}", headers=H).json()["deleted"] == 1
+
+
+def test_stats_smoke(client):
+    # 빈 DB → 빈 리스트, 200
+    r = client.get("/api/underduck/stats", headers=H)
+    assert r.status_code == 200 and r.json() == []

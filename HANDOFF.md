@@ -21,7 +21,7 @@
 | featured | GET, PUT(player_name, title_ids[3]) | |
 | push | GET, POST(upsert endpoint), DELETE(body endpoint) | |
 | roster | GET, POST | |
-| stats | GET | ⚠️ 시트 수식 **스냅샷**. 시트 폐기 후 matches/mom_vote 집계 endpoint로 대체 필요 |
+| stats | GET | matches(골/도움/참석 명단)+mom_vote(공/수 부문 투표)에서 **매 요청 집계**. no/pos는 roster 조인. (구 스냅샷 방식 폐기) |
 | notice | GET(단일), PUT | 활성 공지 1건 |
 | lineup | GET `?match_id=`, PUT(upsert match_id+quarter, 빈값이면 삭제) | players[11]/subs[5]/substitutions JSON 배열 |
 | feedback | GET `?match_id=`, POST, DELETE `/{id}` | |
@@ -35,4 +35,4 @@
 2. `app/lib/underduck.ts`(서버사이드 fetch 헬퍼, 이미 존재) 위에 도메인별 래퍼 작성.
 3. 도메인 단위 PR로 `getSheetData`/`sheets-write.ts` 호출을 백엔드 호출로 전환 + 매번 실검증. 빅뱅 금지.
 4. 전 도메인 전환 후 `google-sheets.ts`/`sheets-write.ts`/`GOOGLE_*` 제거.
-5. **stats**: 시트 폐기 전 백엔드 집계 endpoint로 교체(현재는 스냅샷).
+5. ~~**stats**: 백엔드 집계 endpoint로 교체~~ ✅ 완료(2026-06-19). `routers/stats.py`가 matches/mom_vote에서 실시간 집계. `stats` 테이블·`import_sheets`의 stats 시드는 더 이상 사용 안 함(제거 가능). mom은 vote_type(공격/수비) 부문별 최다득표 합산이라 프론트에서 부문 분리 표기가 필요하면 `StatOut`에 필드 추가 검토.
