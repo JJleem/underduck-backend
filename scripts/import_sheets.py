@@ -69,7 +69,7 @@ def main() -> int:
     try:
         # 재실행 안전: 대상 테이블 전부 비우기
         for m in (models.MomVote, models.VoteComment, models.AttendanceVote,
-                  models.Featured, models.PushSubscription):
+                  models.Featured, models.PushSubscription, models.Match):
             db.query(m).delete()
         db.commit()
 
@@ -114,6 +114,17 @@ def main() -> int:
             seen.add(ep)
             objs.append(models.PushSubscription(endpoint=ep, p256dh=_cell(r, 1), auth=_cell(r, 2)))
         db.add_all(objs); counts["push_subscription"] = len(objs)
+
+        # matches: A~O. match_id = 데이터행 0-based 인덱스(보존). CSV 필드는 원형 유지.
+        rows = _fetch("matches")[1:]
+        objs = [models.Match(
+            match_id=i, date=_cell(r, 0), time=_cell(r, 1), location=_cell(r, 2),
+            opponent=_cell(r, 3), our_score=_int(r, 4), their_score=_int(r, 5),
+            result=_cell(r, 6), type=_cell(r, 7), goals=_cell(r, 8), assists=_cell(r, 9),
+            mom=_cell(r, 10), attendees=_cell(r, 11), photos=_cell(r, 12),
+            weather=_cell(r, 13), attendance_status=_cell(r, 14),
+        ) for i, r in enumerate(rows)]
+        db.add_all(objs); counts["matches"] = len(objs)
 
         db.commit()
         print("이전 완료:", counts)

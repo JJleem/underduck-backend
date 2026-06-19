@@ -53,3 +53,25 @@ class PushSubscription(Base):
     endpoint: Mapped[str] = mapped_column(Text, unique=True)
     p256dh: Mapped[str | None] = mapped_column(Text)
     auth: Mapped[str | None] = mapped_column(Text)
+
+
+class Match(Base):
+    __tablename__ = "matches"
+
+    # match_id = 시트 데이터행 0-based 인덱스. mom_vote 등이 참조하므로 보존. 신규는 max+1.
+    match_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    date: Mapped[str | None] = mapped_column(String(20))
+    time: Mapped[str | None] = mapped_column(String(20))
+    location: Mapped[str | None] = mapped_column(String(200))
+    opponent: Mapped[str | None] = mapped_column(String(200))
+    our_score: Mapped[int | None] = mapped_column(Integer)
+    their_score: Mapped[int | None] = mapped_column(Integer)
+    result: Mapped[str | None] = mapped_column(String(20))
+    type: Mapped[str | None] = mapped_column(String(50))
+    goals: Mapped[str | None] = mapped_column(Text)        # CSV (득점자, 빈 슬롯 포함 가능)
+    assists: Mapped[str | None] = mapped_column(Text)      # CSV (위치 대응, 빈 슬롯 포함 가능)
+    mom: Mapped[str | None] = mapped_column(String(100))
+    attendees: Mapped[str | None] = mapped_column(Text)    # CSV
+    photos: Mapped[str | None] = mapped_column(Text)       # CSV (Cloudinary URL, 최대 5)
+    weather: Mapped[str | None] = mapped_column(String(100))  # "28°C,맑음,01d,10"
+    attendance_status: Mapped[str | None] = mapped_column(String(20))
