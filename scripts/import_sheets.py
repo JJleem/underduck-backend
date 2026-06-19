@@ -9,6 +9,7 @@
   cd underduck-backend
   GOOGLE_SHEET_ID=... GOOGLE_SHEETS_API_KEY=... .venv/bin/python -m scripts.import_sheets
 """
+import json
 import os
 import sys
 import time
@@ -69,7 +70,9 @@ def main() -> int:
     try:
         # 재실행 안전: 대상 테이블 전부 비우기
         for m in (models.MomVote, models.VoteComment, models.AttendanceVote,
-                  models.Featured, models.PushSubscription, models.Match):
+                  models.Featured, models.PushSubscription, models.Match,
+                  models.Roster, models.Stat, models.Notice, models.Lineup,
+                  models.Feedback, models.User, models.Media):
             db.query(m).delete()
         db.commit()
 
@@ -125,6 +128,81 @@ def main() -> int:
             weather=_cell(r, 13), attendance_status=_cell(r, 14),
         ) for i, r in enumerate(rows)]
         db.add_all(objs); counts["matches"] = len(objs)
+
+        # roster
+        rows = _fetch("roster")[1:]
+        objs = [models.Roster(no=_cell(r, 0), name=_cell(r, 1), pos=_cell(r, 2),
+                              status=_cell(r, 3), memo=_cell(r, 5))
+                for r in rows if any(c.strip() for c in r)]
+        db.add_all(objs); counts["roster"] = len(objs)
+
+        # stats (수식 스냅샷)
+        rows = _fetch("stats")[1:]
+        objs = [models.Stat(no=_cell(r, 0), name=_cell(r, 1), pos=_cell(r, 2),
+                            apps=_int(r, 3), goals=_int(r, 4), assists=_int(r, 5), mom=_int(r, 6))
+                for r in rows if any(c.strip() for c in r)]
+        db.add_all(objs); counts["stats"] = len(objs)
+
+        # notice: 활성 공지 1건(시트 row2 = 첫 데이터행)
+        rows = _fetch("notice")[1:]
+        n = 0
+        if rows and any(c.strip() for c in rows[0]):
+            r = rows[0]
+            db.add(models.Notice(date=_cell(r, 0), title=_cell(r, 1), content=_cell(r, 2),
+                                 important=(_cell(r, 3) == "Y"), location=_cell(r, 4)))
+            n = 1
+        counts["notice"] = n
+
+        # lineup: p1~p11 → players[], sub1~sub5 → subs[], col T(19) → substitutions(JSON)
+        rows = _fetch("lineup")[1:]
+        objs = []
+        for r in rows:
+            if not any(c.strip() for c in r):
+                continue
+            players = [(_cell(r, 3 + i) or "") for i in range(11)]
+            subs = [(_cell(r, 14 + i) or "") for i in range(5)]
+            sub_raw = _cell(r, 19)
+            try:
+                substitutions = json.loads(sub_raw) if sub_raw else []
+            except (ValueError, TypeError):
+                substitutions = []
+            objs.append(models.Lineup(match_id=_int(r, 0), quarter=_cell(r, 1),
+                                      formation=_cell(r, 2), players=players, subs=subs,
+                                      substitutions=substitutions))
+        db.add_all(objs); counts["lineup"] = len(objs)
+
+        # feedback: matchId, timestamp, name, message
+        rows = _fetch("feedback")[1:]
+        objs = [models.Feedback(match_id=_int(r, 0), timestamp=_ts(r, 1),
+                               name=_cell(r, 2), message=_cell(r, 3))
+                for r in rows if any(c.strip() for c in r)]
+        db.add_all(objs); counts["feedback"] = len(objs)
+
+        # users: kakaoId, nickname, profileImage, joinedAt, lastLogin
+        rows = _fetch("users")[1:]
+        seen = set()
+        objs = []
+        for r in rows:
+            kid = _cell(r, 0)
+            if not kid or kid in seen:
+                continue
+            seen.add(kid)
+            objs.append(models.User(kakao_id=kid, nickname=_cell(r, 1), profile_image=_cell(r, 2),
+                                    joined_at=_ts(r, 3), last_login=_ts(r, 4)))
+        db.add_all(objs); counts["users"] = len(objs)
+
+        # media: type, url, title, uploadedAt
+        rows = _fetch("media")[1:]
+        seen = set()
+        objs = []
+        for r in rows:
+            url = _cell(r, 1)
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            objs.append(models.Media(type=_cell(r, 0), url=url, title=_cell(r, 2),
+                                     uploaded_at=_ts(r, 3)))
+        db.add_all(objs); counts["media"] = len(objs)
 
         db.commit()
         print("이전 완료:", counts)

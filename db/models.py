@@ -1,4 +1,4 @@
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.connection import Base
@@ -75,3 +75,83 @@ class Match(Base):
     photos: Mapped[str | None] = mapped_column(Text)       # CSV (Cloudinary URL, 최대 5)
     weather: Mapped[str | None] = mapped_column(String(100))  # "28°C,맑음,01d,10"
     attendance_status: Mapped[str | None] = mapped_column(String(20))
+
+
+class Roster(Base):
+    __tablename__ = "roster"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    no: Mapped[str | None] = mapped_column(String(10))       # 등번호
+    name: Mapped[str | None] = mapped_column(String(100))
+    pos: Mapped[str | None] = mapped_column(String(20))
+    status: Mapped[str | None] = mapped_column(String(20))   # 활동/비활동
+    memo: Mapped[str | None] = mapped_column(Text)
+
+
+class Stat(Base):
+    """stats 시트 = 시트 수식 산출물. 여기엔 스냅샷으로 이전(읽기전용).
+    ⚠️ 시트 폐기 후엔 matches/mom_vote에서 계산하는 endpoint로 대체 필요."""
+    __tablename__ = "stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    no: Mapped[str | None] = mapped_column(String(10))
+    name: Mapped[str | None] = mapped_column(String(100))
+    pos: Mapped[str | None] = mapped_column(String(20))
+    apps: Mapped[int | None] = mapped_column(Integer)
+    goals: Mapped[int | None] = mapped_column(Integer)
+    assists: Mapped[int | None] = mapped_column(Integer)
+    mom: Mapped[int | None] = mapped_column(Integer)
+
+
+class Notice(Base):
+    """대시보드에 노출되는 단일 활성 공지(시트 row2). id=1 고정 단일행."""
+    __tablename__ = "notice"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[str | None] = mapped_column(String(20))
+    title: Mapped[str | None] = mapped_column(String(200))
+    content: Mapped[str | None] = mapped_column(Text)
+    important: Mapped[bool] = mapped_column(Boolean, default=False)
+    location: Mapped[str | None] = mapped_column(String(200))
+
+
+class Lineup(Base):
+    __tablename__ = "lineup"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    match_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    quarter: Mapped[str | None] = mapped_column(String(20))
+    formation: Mapped[str | None] = mapped_column(String(20))
+    players: Mapped[list | None] = mapped_column(JSON)        # 선발 11 (배열)
+    subs: Mapped[list | None] = mapped_column(JSON)           # 대기 5 (배열)
+    substitutions: Mapped[list | None] = mapped_column(JSON)  # [{out,in,time}]
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    match_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    timestamp: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+    name: Mapped[str | None] = mapped_column(String(100))
+    message: Mapped[str | None] = mapped_column(Text)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    kakao_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nickname: Mapped[str | None] = mapped_column(String(100))
+    profile_image: Mapped[str | None] = mapped_column(Text)
+    joined_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+    last_login: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class Media(Base):
+    __tablename__ = "media"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    type: Mapped[str | None] = mapped_column(String(20))
+    url: Mapped[str] = mapped_column(Text, unique=True)
+    title: Mapped[str | None] = mapped_column(String(200))
+    uploaded_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))

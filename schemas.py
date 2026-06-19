@@ -153,3 +153,122 @@ class PushCreate(BaseModel):
 
 class PushDelete(BaseModel):
     endpoint: str
+
+
+# ── roster ──
+class RosterOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    no: str | None = None
+    name: str | None = None
+    pos: str | None = None
+    status: str | None = None
+    memo: str | None = None
+
+
+class RosterCreate(BaseModel):
+    no: str
+    name: str
+    pos: str
+    status: str
+
+
+# ── stats (읽기전용) ──
+class StatOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    no: str | None = None
+    name: str | None = None
+    pos: str | None = None
+    apps: int | None = None
+    goals: int | None = None
+    assists: int | None = None
+    mom: int | None = None
+
+
+# ── notice ──
+class NoticeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    date: str | None = None
+    title: str | None = None
+    content: str | None = None
+    important: bool = False
+    location: str | None = None
+
+
+class NoticeUpdate(BaseModel):
+    date: str
+    title: str
+    content: str
+    important: bool = False
+    location: str | None = None
+
+
+# ── lineup ──
+class LineupOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    match_id: int | None = None
+    quarter: str | None = None
+    formation: str | None = None
+    players: list[str] | None = None
+    subs: list[str] | None = None
+    substitutions: list[dict] | None = None
+
+
+class LineupUpsert(BaseModel):
+    match_id: int
+    quarter: str
+    formation: str
+    players: list[str] = []
+    subs: list[str] = []
+    substitutions: list[dict] = []
+
+
+# ── feedback ──
+class FeedbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    match_id: int | None = None
+    timestamp: datetime | None = None
+    name: str | None = None
+    message: str | None = None
+
+
+class FeedbackCreate(BaseModel):
+    match_id: int
+    name: str
+    message: str
+
+
+# ── users ──
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    kakao_id: str
+    nickname: str | None = None
+    profile_image: str | None = None
+    joined_at: datetime | None = None
+    last_login: datetime | None = None
+
+
+class UserUpsert(BaseModel):
+    kakao_id: str
+    nickname: str
+    profile_image: str
+
+
+# ── media ──
+class MediaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    type: str | None = None
+    url: str | None = None
+    title: str | None = None
+    uploaded_at: datetime | None = None
+
+
+class MediaCreate(BaseModel):
+    type: str
+    url: str
+    title: str
