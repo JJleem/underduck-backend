@@ -272,3 +272,15 @@ class MediaCreate(BaseModel):
     type: str
     url: str
     title: str
+
+
+# ── name_alias (카카오 닉네임 → 로스터 실명) ──
+class NameAliasOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    kakao_name: str
+    real_name: str
+
+
+class NameAliasUpsert(BaseModel):
+    kakao_name: str
+    real_name: str

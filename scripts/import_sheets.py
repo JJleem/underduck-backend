@@ -19,6 +19,7 @@ import httpx
 
 from db.connection import SessionLocal
 from db import models
+from naming import resolve_name
 
 SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
 API_KEY = os.environ.get("GOOGLE_SHEETS_API_KEY", "")
@@ -51,6 +52,13 @@ def _int(row: list[str], i: int) -> int | None:
         return None
 
 
+def _resolve_csv(db, v: str | None) -> str | None:
+    # 콤마 구분 이름 목록의 각 토큰을 실명으로 정규화(빈 토큰 보존).
+    if not v:
+        return v
+    return ",".join(resolve_name(db, t.strip()) or t for t in v.split(","))
+
+
 def _ts(row: list[str], i: int):
     v = _cell(row, i)
     if not v:
@@ -80,22 +88,22 @@ def main() -> int:
 
         # mom_vote: matchId, voterName, votedFor, voteType, timestamp
         rows = _fetch("mom_vote")[1:]
-        objs = [models.MomVote(match_id=_int(r, 0), voter_name=_cell(r, 1),
-                               voted_for=_cell(r, 2), vote_type=_cell(r, 3), timestamp=_ts(r, 4))
+        objs = [models.MomVote(match_id=_int(r, 0), voter_name=resolve_name(db, _cell(r, 1)),
+                               voted_for=resolve_name(db, _cell(r, 2)), vote_type=_cell(r, 3), timestamp=_ts(r, 4))
                 for r in rows if any(c.strip() for c in r)]
         db.add_all(objs); counts["mom_vote"] = len(objs)
 
         # vote_comment: matchId, kakaoId, nickname, message, timestamp
         rows = _fetch("vote_comment")[1:]
         objs = [models.VoteComment(match_id=_int(r, 0), kakao_id=_cell(r, 1),
-                                   nickname=_cell(r, 2), message=_cell(r, 3), timestamp=_ts(r, 4))
+                                   nickname=resolve_name(db, _cell(r, 2)), message=_cell(r, 3), timestamp=_ts(r, 4))
                 for r in rows if any(c.strip() for c in r)]
         db.add_all(objs); counts["vote_comment"] = len(objs)
 
         # attendance_vote: matchId, kakaoId, nickname, response, timestamp
         rows = _fetch("attendance_vote")[1:]
         objs = [models.AttendanceVote(match_id=_int(r, 0), kakao_id=_cell(r, 1),
-                                      nickname=_cell(r, 2), response=_cell(r, 3), timestamp=_ts(r, 4))
+                                      nickname=resolve_name(db, _cell(r, 2)), response=_cell(r, 3), timestamp=_ts(r, 4))
                 for r in rows if any(c.strip() for c in r)]
         db.add_all(objs); counts["attendance_vote"] = len(objs)
 
@@ -124,7 +132,8 @@ def main() -> int:
             match_id=i, date=_cell(r, 0), time=_cell(r, 1), location=_cell(r, 2),
             opponent=_cell(r, 3), our_score=_int(r, 4), their_score=_int(r, 5),
             result=_cell(r, 6), type=_cell(r, 7), goals=_cell(r, 8), assists=_cell(r, 9),
-            mom=_cell(r, 10), attendees=_cell(r, 11), photos=_cell(r, 12),
+            mom=resolve_name(db, _cell(r, 10)), attendees=_resolve_csv(db, _cell(r, 11)),
+            photos=_cell(r, 12),
             weather=_cell(r, 13), attendance_status=_cell(r, 14),
         ) for i, r in enumerate(rows)]
         db.add_all(objs); counts["matches"] = len(objs)
@@ -169,7 +178,7 @@ def main() -> int:
         # feedback: matchId, timestamp, name, message
         rows = _fetch("feedback")[1:]
         objs = [models.Feedback(match_id=_int(r, 0), timestamp=_ts(r, 1),
-                               name=_cell(r, 2), message=_cell(r, 3))
+                               name=resolve_name(db, _cell(r, 2)), message=_cell(r, 3))
                 for r in rows if any(c.strip() for c in r)]
         db.add_all(objs); counts["feedback"] = len(objs)
 

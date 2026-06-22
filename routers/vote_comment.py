@@ -8,6 +8,7 @@ import schemas
 from db.connection import get_db
 from db.models import VoteComment
 from deps import require_underduck
+from naming import resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/vote-comment",
@@ -29,7 +30,7 @@ def create_comment(body: schemas.VoteCommentCreate, db: Session = Depends(get_db
     c = VoteComment(
         match_id=body.match_id,
         kakao_id=body.kakao_id,
-        nickname=body.nickname.strip(),
+        nickname=resolve_name(db, body.nickname.strip()),
         message=body.message.strip(),
         timestamp=datetime.now(timezone.utc),
     )

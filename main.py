@@ -15,6 +15,7 @@ from routers import (
     matches,
     media,
     mom_vote,
+    name_alias,
     notice,
     push,
     roster,
@@ -39,3 +40,4 @@ app.include_router(lineup.router)
 app.include_router(feedback.router)
 app.include_router(users.router)
 app.include_router(media.router)
+app.include_router(name_alias.router)

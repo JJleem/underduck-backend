@@ -144,3 +144,11 @@ class Media(Base):
     url: Mapped[str] = mapped_column(Text, unique=True)
     title: Mapped[str | None] = mapped_column(String(200))
     uploaded_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class NameAlias(Base):
+    """카카오 닉네임 → 로스터 실명 매핑 (예: 성원→백성원, 창의→홍창의)."""
+    __tablename__ = "name_alias"
+
+    kakao_name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    real_name: Mapped[str] = mapped_column(String(100), nullable=False)

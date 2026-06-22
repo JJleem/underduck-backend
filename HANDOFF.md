@@ -27,6 +27,7 @@
 | feedback | GET `?match_id=`, POST, DELETE `/{id}` | |
 | users | GET, GET `/{kakao_id}`, POST(upsert) | |
 | media | GET, POST, DELETE `/{id}` | |
+| name-alias | GET, PUT(kakao_name, real_name), DELETE `/{kakao_name}` | 카카오 닉네임→로스터 실명 맵핑. mom_vote/vote_comment/attendance/feedback 저장 시 자동 정규화 |
 
 응답 스키마는 `schemas.py` 참조. timestamp/joined_at 등은 ISO datetime.
 

@@ -8,6 +8,7 @@ import schemas
 from db.connection import get_db
 from db.models import AttendanceVote, Match
 from deps import require_underduck
+from naming import resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/attendance",
@@ -36,7 +37,7 @@ def upsert_attendance(body: schemas.AttendanceUpsert, db: Session = Depends(get_
     if row is None:
         row = AttendanceVote(match_id=body.match_id, kakao_id=body.kakao_id)
         db.add(row)
-    row.nickname = body.nickname.strip()
+    row.nickname = resolve_name(db, body.nickname.strip())
     row.response = body.response
     row.timestamp = datetime.now(timezone.utc)
 

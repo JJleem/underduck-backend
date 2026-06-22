@@ -8,6 +8,7 @@ import schemas
 from db.connection import get_db
 from db.models import Feedback
 from deps import require_underduck
+from naming import resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/feedback",
@@ -28,7 +29,7 @@ def list_feedback(match_id: int | None = None, db: Session = Depends(get_db)):
 def create_feedback(body: schemas.FeedbackCreate, db: Session = Depends(get_db)):
     f = Feedback(
         match_id=body.match_id,
-        name=body.name.strip(),
+        name=resolve_name(db, body.name.strip()),
         message=body.message.strip(),
         timestamp=datetime.now(timezone.utc),
     )

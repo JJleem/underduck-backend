@@ -8,6 +8,7 @@ import schemas
 from db.connection import get_db
 from db.models import MomVote
 from deps import require_underduck
+from naming import resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/mom-vote",
@@ -28,8 +29,8 @@ def list_mom_votes(match_id: int | None = None, db: Session = Depends(get_db)):
 def create_mom_vote(body: schemas.MomVoteCreate, db: Session = Depends(get_db)):
     v = MomVote(
         match_id=body.match_id,
-        voter_name=body.voter_name.strip(),
-        voted_for=body.voted_for.strip(),
+        voter_name=resolve_name(db, body.voter_name.strip()),
+        voted_for=resolve_name(db, body.voted_for.strip()),
         vote_type=body.vote_type.strip(),
         timestamp=datetime.now(timezone.utc),
     )
@@ -42,7 +43,8 @@ def create_mom_vote(body: schemas.MomVoteCreate, db: Session = Depends(get_db)):
 @router.delete("")
 def delete_mom_vote(body: schemas.MomVoteDelete, db: Session = Depends(get_db)):
     stmt = select(MomVote).where(
-        MomVote.match_id == body.match_id, MomVote.voter_name == body.voter_name
+        MomVote.match_id == body.match_id,
+        MomVote.voter_name == resolve_name(db, body.voter_name),
     )
     if body.vote_type is not None:
         stmt = stmt.where(MomVote.vote_type == body.vote_type)
