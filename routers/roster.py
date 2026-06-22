@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,18 @@ def list_roster(db: Session = Depends(get_db)):
 def create_roster(body: schemas.RosterCreate, db: Session = Depends(get_db)):
     r = Roster(no=body.no, name=body.name, pos=body.pos, status=body.status)
     db.add(r)
+    db.commit()
+    db.refresh(r)
+    return r
+
+
+@router.put("/{roster_id}", response_model=schemas.RosterOut)
+def update_roster(roster_id: int, body: schemas.RosterCreate, db: Session = Depends(get_db)):
+    # roster_id 행만 no/name/pos/status 갱신 (memo는 미전송이므로 기존 값 유지)
+    r = db.get(Roster, roster_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="roster not found")
+    r.no, r.name, r.pos, r.status = body.no, body.name, body.pos, body.status
     db.commit()
     db.refresh(r)
     return r
