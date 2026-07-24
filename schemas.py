@@ -304,6 +304,7 @@ class BoardPostOut(BaseModel):
     body: str | None = None
     created_at: datetime | None = None
     comment_count: int = 0
+    like_count: int = 0
 
 
 class BoardPostCreate(BaseModel):
@@ -312,6 +313,15 @@ class BoardPostCreate(BaseModel):
     title: str
     youtube_url: str
     body: str | None = None
+
+
+class BoardLikeToggle(BaseModel):
+    kakao_id: str
+
+
+class BoardLikeOut(BaseModel):
+    liked: bool
+    like_count: int
 
 
 # ── board_comment ──

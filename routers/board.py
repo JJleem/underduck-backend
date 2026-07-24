@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 import schemas
 from db.connection import get_db
-from db.models import BoardComment, BoardPost
+from db.models import BoardComment, BoardLike, BoardPost
 from deps import require_underduck
 from naming import resolve_name
 
@@ -20,19 +20,32 @@ router = APIRouter(
 # ── posts ──
 @router.get("", response_model=list[schemas.BoardPostOut])
 def list_posts(db: Session = Depends(get_db)):
-    # 최신순 + 각 글의 댓글 수 동봉.
-    counts = dict(
+    # 최신순 + 각 글의 댓글/좋아요 수 동봉.
+    comment_counts = dict(
         db.execute(
             select(BoardComment.post_id, func.count(BoardComment.id)).group_by(BoardComment.post_id)
+        ).all()
+    )
+    like_counts = dict(
+        db.execute(
+            select(BoardLike.post_id, func.count(BoardLike.id)).group_by(BoardLike.post_id)
         ).all()
     )
     posts = db.scalars(select(BoardPost).order_by(BoardPost.id.desc())).all()
     out = []
     for p in posts:
         item = schemas.BoardPostOut.model_validate(p)
-        item.comment_count = counts.get(p.id, 0)
+        item.comment_count = comment_counts.get(p.id, 0)
+        item.like_count = like_counts.get(p.id, 0)
         out.append(item)
     return out
+
+
+@router.get("/my-likes", response_model=list[int])
+def my_likes(kakao_id: str, db: Session = Depends(get_db)):
+    # 특정 사용자가 좋아요한 post_id 목록. (`/{post_id}` 보다 먼저 선언해 매칭 충돌 회피)
+    rows = db.scalars(select(BoardLike.post_id).where(BoardLike.kakao_id == kakao_id)).all()
+    return [r for r in rows if r is not None]
 
 
 @router.get("/{post_id}", response_model=schemas.BoardPostOut)
@@ -44,7 +57,28 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
     item.comment_count = db.scalar(
         select(func.count(BoardComment.id)).where(BoardComment.post_id == post_id)
     )
+    item.like_count = db.scalar(
+        select(func.count(BoardLike.id)).where(BoardLike.post_id == post_id)
+    )
     return item
+
+
+@router.post("/{post_id}/like", response_model=schemas.BoardLikeOut)
+def toggle_like(post_id: int, body: schemas.BoardLikeToggle, db: Session = Depends(get_db)):
+    if db.get(BoardPost, post_id) is None:
+        raise HTTPException(status_code=404, detail="post not found")
+    existing = db.scalars(
+        select(BoardLike).where(BoardLike.post_id == post_id, BoardLike.kakao_id == body.kakao_id)
+    ).first()
+    if existing:
+        db.delete(existing)
+        liked = False
+    else:
+        db.add(BoardLike(post_id=post_id, kakao_id=body.kakao_id, created_at=datetime.now(timezone.utc)))
+        liked = True
+    db.commit()
+    count = db.scalar(select(func.count(BoardLike.id)).where(BoardLike.post_id == post_id))
+    return {"liked": liked, "like_count": count or 0}
 
 
 @router.post("", response_model=schemas.BoardPostOut, status_code=201)
@@ -68,8 +102,9 @@ def delete_post(post_id: int, db: Session = Depends(get_db)):
     p = db.get(BoardPost, post_id)
     if p is None:
         raise HTTPException(status_code=404, detail="post not found")
-    # 글 삭제 시 딸린 댓글도 함께 제거.
+    # 글 삭제 시 딸린 댓글·좋아요도 함께 제거.
     db.query(BoardComment).filter(BoardComment.post_id == post_id).delete()
+    db.query(BoardLike).filter(BoardLike.post_id == post_id).delete()
     db.delete(p)
     db.commit()
     return {"deleted": 1}

@@ -1,4 +1,4 @@
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.connection import Base
@@ -177,4 +177,15 @@ class BoardComment(Base):
     kakao_id: Mapped[str | None] = mapped_column(String(64))
     author: Mapped[str | None] = mapped_column(String(100))
     message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class BoardLike(Base):
+    """전술게시판 좋아요. 인당 1번(post_id+kakao_id 유니크)."""
+    __tablename__ = "board_like"
+    __table_args__ = (UniqueConstraint("post_id", "kakao_id", name="uq_board_like_post_user"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    kakao_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
