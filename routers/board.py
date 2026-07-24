@@ -48,6 +48,12 @@ def my_likes(kakao_id: str, db: Session = Depends(get_db)):
     return [r for r in rows if r is not None]
 
 
+@router.get("/comments/all", response_model=list[schemas.BoardCommentOut])
+def all_comments(db: Session = Depends(get_db)):
+    # 전 게시글의 댓글 전체 (칭호 집계용). `/{post_id}` 보다 먼저 선언.
+    return db.scalars(select(BoardComment).order_by(BoardComment.id)).all()
+
+
 @router.get("/{post_id}", response_model=schemas.BoardPostOut)
 def get_post(post_id: int, db: Session = Depends(get_db)):
     p = db.get(BoardPost, post_id)
