@@ -164,6 +164,7 @@ class RosterOut(BaseModel):
     pos: str | None = None
     status: str | None = None
     memo: str | None = None
+    pref_pos: str | None = None
 
 
 class RosterCreate(BaseModel):
@@ -171,6 +172,12 @@ class RosterCreate(BaseModel):
     name: str
     pos: str
     status: str
+
+
+class RosterPrefPosUpdate(BaseModel):
+    # 선호 포지션은 본인만 설정 → 프론트 API 라우트가 세션 실명을 name으로 강제.
+    name: str
+    pref_pos: str  # CSV (최대 3, 프론트 검증)
 
 
 # ── stats (읽기전용) ──
@@ -284,3 +291,41 @@ class NameAliasOut(BaseModel):
 class NameAliasUpsert(BaseModel):
     kakao_name: str
     real_name: str
+
+
+# ── board_post (전술게시판) ──
+class BoardPostOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    kakao_id: str | None = None
+    author: str | None = None
+    title: str | None = None
+    youtube_url: str | None = None
+    body: str | None = None
+    created_at: datetime | None = None
+    comment_count: int = 0
+
+
+class BoardPostCreate(BaseModel):
+    kakao_id: str
+    author: str
+    title: str
+    youtube_url: str
+    body: str | None = None
+
+
+# ── board_comment ──
+class BoardCommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    post_id: int | None = None
+    kakao_id: str | None = None
+    author: str | None = None
+    message: str | None = None
+    created_at: datetime | None = None
+
+
+class BoardCommentCreate(BaseModel):
+    kakao_id: str
+    author: str
+    message: str

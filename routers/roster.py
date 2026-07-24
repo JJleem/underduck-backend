@@ -6,6 +6,7 @@ import schemas
 from db.connection import get_db
 from db.models import Roster
 from deps import require_underduck
+from naming import resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/roster",
@@ -17,6 +18,20 @@ router = APIRouter(
 @router.get("", response_model=list[schemas.RosterOut])
 def list_roster(db: Session = Depends(get_db)):
     return db.scalars(select(Roster).order_by(Roster.id)).all()
+
+
+@router.put("/pref-pos", response_model=schemas.RosterOut)
+def update_pref_pos(body: schemas.RosterPrefPosUpdate, db: Session = Depends(get_db)):
+    # 본인 이름(실명 정규화)으로 로스터 행을 찾아 선호 포지션만 갱신.
+    # (경로 파라미터 /{roster_id} 보다 먼저 선언해야 매칭 충돌이 없다.)
+    name = resolve_name(db, body.name.strip())
+    r = db.scalars(select(Roster).where(Roster.name == name)).first()
+    if r is None:
+        raise HTTPException(status_code=404, detail="roster not found for name")
+    r.pref_pos = body.pref_pos.strip()
+    db.commit()
+    db.refresh(r)
+    return r
 
 
 @router.post("", response_model=schemas.RosterOut, status_code=201)

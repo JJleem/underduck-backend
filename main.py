@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from routers import (
     attendance,
+    board,
     featured,
     feedback,
     health,
@@ -41,3 +42,4 @@ app.include_router(feedback.router)
 app.include_router(users.router)
 app.include_router(media.router)
 app.include_router(name_alias.router)
+app.include_router(board.router)

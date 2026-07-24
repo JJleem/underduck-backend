@@ -86,6 +86,7 @@ class Roster(Base):
     pos: Mapped[str | None] = mapped_column(String(20))
     status: Mapped[str | None] = mapped_column(String(20))   # 활동/비활동
     memo: Mapped[str | None] = mapped_column(Text)
+    pref_pos: Mapped[str | None] = mapped_column(String(50))  # 선호 포지션 CSV (본인 설정, 최대 3)
 
 
 # stats 테이블/모델은 폐기됨: stats는 routers/stats.py에서 matches·mom_vote로 실시간 집계.
@@ -152,3 +153,28 @@ class NameAlias(Base):
 
     kakao_name: Mapped[str] = mapped_column(String(100), primary_key=True)
     real_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class BoardPost(Base):
+    """전술게시판 글 (유튜브 링크 공유). 로그인 회원 누구나 작성."""
+    __tablename__ = "board_post"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kakao_id: Mapped[str | None] = mapped_column(String(64))   # 작성자 신원(삭제 권한 판별용)
+    author: Mapped[str | None] = mapped_column(String(100))    # 표시용 이름(실명 정규화)
+    title: Mapped[str | None] = mapped_column(String(200))
+    youtube_url: Mapped[str | None] = mapped_column(Text)      # 유튜브 링크 원본
+    body: Mapped[str | None] = mapped_column(Text)             # 본문(선택)
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class BoardComment(Base):
+    """전술게시판 댓글."""
+    __tablename__ = "board_comment"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    kakao_id: Mapped[str | None] = mapped_column(String(64))
+    author: Mapped[str | None] = mapped_column(String(100))
+    message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
