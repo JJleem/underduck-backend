@@ -324,6 +324,11 @@ class BoardLikeOut(BaseModel):
     like_count: int
 
 
+class BoardLikeGiverOut(BaseModel):
+    name: str   # 실명(정규화)
+    count: int  # 누른 좋아요 수
+
+
 # ── board_comment ──
 class BoardCommentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

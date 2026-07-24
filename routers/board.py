@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 import schemas
 from db.connection import get_db
-from db.models import BoardComment, BoardLike, BoardPost
+from db.models import BoardComment, BoardLike, BoardPost, User
 from deps import require_underduck
 from naming import resolve_name
 
@@ -46,6 +46,24 @@ def my_likes(kakao_id: str, db: Session = Depends(get_db)):
     # 특정 사용자가 좋아요한 post_id 목록. (`/{post_id}` 보다 먼저 선언해 매칭 충돌 회피)
     rows = db.scalars(select(BoardLike.post_id).where(BoardLike.kakao_id == kakao_id)).all()
     return [r for r in rows if r is not None]
+
+
+@router.get("/like-givers", response_model=list[schemas.BoardLikeGiverOut])
+def like_givers(db: Session = Depends(get_db)):
+    # 누가 좋아요를 몇 번 눌렀는지 → kakao_id를 users.nickname → 실명 정규화로 집계.
+    # (칭호 "좋아요 요정"용. `/{post_id}` 보다 먼저 선언.)
+    counts = db.execute(
+        select(BoardLike.kakao_id, func.count(BoardLike.id)).group_by(BoardLike.kakao_id)
+    ).all()
+    nick_by_id = {u.kakao_id: (u.nickname or "") for u in db.scalars(select(User)).all()}
+    agg: dict[str, int] = {}
+    for kakao_id, cnt in counts:
+        nickname = nick_by_id.get(kakao_id, "")
+        name = resolve_name(db, nickname.strip()) if nickname else ""
+        if not name:
+            continue
+        agg[name] = agg.get(name, 0) + cnt
+    return [{"name": k, "count": v} for k, v in agg.items()]
 
 
 @router.get("/comments/all", response_model=list[schemas.BoardCommentOut])
