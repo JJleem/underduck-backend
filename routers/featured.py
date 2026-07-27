@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import Featured
-from deps import require_underduck
+from deps import require_admin, require_underduck
 
 router = APIRouter(
     prefix="/api/underduck/featured",
@@ -19,7 +19,7 @@ def list_featured(db: Session = Depends(get_db)):
     return db.scalars(select(Featured).order_by(Featured.player_name)).all()
 
 
-@router.put("", response_model=schemas.FeaturedOut)
+@router.put("", response_model=schemas.FeaturedOut, dependencies=[Depends(require_admin)])
 def upsert_featured(body: schemas.FeaturedUpsert, db: Session = Depends(get_db)):
     name = body.player_name.strip()
     ids = (body.title_ids + ["", "", ""])[:3]

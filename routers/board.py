@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import BoardComment, BoardLike, BoardPost, User
-from deps import require_underduck
+from deps import Caller, assert_owner_or_admin, caller, effective_kakao_id, require_underduck
 from naming import resolve_name
 
 router = APIRouter(
@@ -42,9 +42,11 @@ def list_posts(db: Session = Depends(get_db)):
 
 
 @router.get("/my-likes", response_model=list[int])
-def my_likes(kakao_id: str, db: Session = Depends(get_db)):
+def my_likes(kakao_id: str, c: Caller = Depends(caller), db: Session = Depends(get_db)):
     # 특정 사용자가 좋아요한 post_id 목록. (`/{post_id}` 보다 먼저 선언해 매칭 충돌 회피)
-    rows = db.scalars(select(BoardLike.post_id).where(BoardLike.kakao_id == kakao_id)).all()
+    # 신원 헤더가 오면 남의 목록을 조회하지 못하도록 세션 사용자로 강제한다.
+    target = effective_kakao_id(c, kakao_id)
+    rows = db.scalars(select(BoardLike.post_id).where(BoardLike.kakao_id == target)).all()
     return [r for r in rows if r is not None]
 
 
@@ -88,17 +90,23 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{post_id}/like", response_model=schemas.BoardLikeOut)
-def toggle_like(post_id: int, body: schemas.BoardLikeToggle, db: Session = Depends(get_db)):
+def toggle_like(
+    post_id: int,
+    body: schemas.BoardLikeToggle,
+    c: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
     if db.get(BoardPost, post_id) is None:
         raise HTTPException(status_code=404, detail="post not found")
+    kakao_id = effective_kakao_id(c, body.kakao_id)
     existing = db.scalars(
-        select(BoardLike).where(BoardLike.post_id == post_id, BoardLike.kakao_id == body.kakao_id)
+        select(BoardLike).where(BoardLike.post_id == post_id, BoardLike.kakao_id == kakao_id)
     ).first()
     if existing:
         db.delete(existing)
         liked = False
     else:
-        db.add(BoardLike(post_id=post_id, kakao_id=body.kakao_id, created_at=datetime.now(timezone.utc)))
+        db.add(BoardLike(post_id=post_id, kakao_id=kakao_id, created_at=datetime.now(timezone.utc)))
         liked = True
     db.commit()
     count = db.scalar(select(func.count(BoardLike.id)).where(BoardLike.post_id == post_id))
@@ -106,9 +114,13 @@ def toggle_like(post_id: int, body: schemas.BoardLikeToggle, db: Session = Depen
 
 
 @router.post("", response_model=schemas.BoardPostOut, status_code=201)
-def create_post(body: schemas.BoardPostCreate, db: Session = Depends(get_db)):
+def create_post(
+    body: schemas.BoardPostCreate,
+    c: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
     p = BoardPost(
-        kakao_id=body.kakao_id,
+        kakao_id=effective_kakao_id(c, body.kakao_id),
         author=resolve_name(db, body.author.strip()),
         title=body.title.strip(),
         youtube_url=body.youtube_url.strip(),
@@ -122,10 +134,11 @@ def create_post(body: schemas.BoardPostCreate, db: Session = Depends(get_db)):
 
 
 @router.delete("/{post_id}")
-def delete_post(post_id: int, db: Session = Depends(get_db)):
+def delete_post(post_id: int, c: Caller = Depends(caller), db: Session = Depends(get_db)):
     p = db.get(BoardPost, post_id)
     if p is None:
         raise HTTPException(status_code=404, detail="post not found")
+    assert_owner_or_admin(c, p.kakao_id)
     # 글 삭제 시 딸린 댓글·좋아요도 함께 제거.
     db.query(BoardComment).filter(BoardComment.post_id == post_id).delete()
     db.query(BoardLike).filter(BoardLike.post_id == post_id).delete()
@@ -143,12 +156,17 @@ def list_comments(post_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{post_id}/comments", response_model=schemas.BoardCommentOut, status_code=201)
-def create_comment(post_id: int, body: schemas.BoardCommentCreate, db: Session = Depends(get_db)):
+def create_comment(
+    post_id: int,
+    body: schemas.BoardCommentCreate,
+    caller_: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
     if db.get(BoardPost, post_id) is None:
         raise HTTPException(status_code=404, detail="post not found")
     c = BoardComment(
         post_id=post_id,
-        kakao_id=body.kakao_id,
+        kakao_id=effective_kakao_id(caller_, body.kakao_id),
         author=resolve_name(db, body.author.strip()),
         message=body.message.strip(),
         created_at=datetime.now(timezone.utc),
@@ -160,10 +178,15 @@ def create_comment(post_id: int, body: schemas.BoardCommentCreate, db: Session =
 
 
 @router.delete("/comments/{comment_id}")
-def delete_comment(comment_id: int, db: Session = Depends(get_db)):
+def delete_comment(
+    comment_id: int,
+    caller_: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
     c = db.get(BoardComment, comment_id)
     if c is None:
         raise HTTPException(status_code=404, detail="comment not found")
+    assert_owner_or_admin(caller_, c.kakao_id)
     db.delete(c)
     db.commit()
     return {"deleted": 1}

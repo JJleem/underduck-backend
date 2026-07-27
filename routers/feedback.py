@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import Feedback
-from deps import require_underduck
-from naming import resolve_name
+from deps import Caller, caller, require_admin, require_underduck
+from naming import effective_name, resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/feedback",
@@ -26,10 +26,14 @@ def list_feedback(match_id: int | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.FeedbackOut, status_code=201)
-def create_feedback(body: schemas.FeedbackCreate, db: Session = Depends(get_db)):
+def create_feedback(
+    body: schemas.FeedbackCreate,
+    c: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
     f = Feedback(
         match_id=body.match_id,
-        name=resolve_name(db, body.name.strip()),
+        name=effective_name(c, db, resolve_name(db, body.name.strip())),
         message=body.message.strip(),
         timestamp=datetime.now(timezone.utc),
     )
@@ -39,7 +43,7 @@ def create_feedback(body: schemas.FeedbackCreate, db: Session = Depends(get_db))
     return f
 
 
-@router.delete("/{feedback_id}")
+@router.delete("/{feedback_id}", dependencies=[Depends(require_admin)])
 def delete_feedback(feedback_id: int, db: Session = Depends(get_db)):
     f = db.get(Feedback, feedback_id)
     if f is None:

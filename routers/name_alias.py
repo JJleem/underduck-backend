@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import NameAlias
-from deps import require_underduck
+from deps import require_admin, require_underduck
 
 router = APIRouter(
     prefix="/api/underduck/name-alias",
@@ -19,7 +19,7 @@ def list_aliases(db: Session = Depends(get_db)):
     return db.scalars(select(NameAlias).order_by(NameAlias.kakao_name)).all()
 
 
-@router.put("", response_model=schemas.NameAliasOut)
+@router.put("", response_model=schemas.NameAliasOut, dependencies=[Depends(require_admin)])
 def upsert_alias(body: schemas.NameAliasUpsert, db: Session = Depends(get_db)):
     # kakao_name(카카오 닉네임) 기준 upsert
     key = body.kakao_name.strip()
@@ -33,7 +33,7 @@ def upsert_alias(body: schemas.NameAliasUpsert, db: Session = Depends(get_db)):
     return row
 
 
-@router.delete("/{kakao_name}")
+@router.delete("/{kakao_name}", dependencies=[Depends(require_admin)])
 def delete_alias(kakao_name: str, db: Session = Depends(get_db)):
     row = db.get(NameAlias, kakao_name)
     if row is None:

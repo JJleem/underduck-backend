@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import VoteComment
-from deps import require_underduck
+from deps import Caller, assert_owner_or_admin, caller, effective_kakao_id, require_underduck
 from naming import resolve_name
 
 router = APIRouter(
@@ -26,10 +26,14 @@ def list_comments(match_id: int | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.VoteCommentOut, status_code=201)
-def create_comment(body: schemas.VoteCommentCreate, db: Session = Depends(get_db)):
+def create_comment(
+    body: schemas.VoteCommentCreate,
+    caller_: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
     c = VoteComment(
         match_id=body.match_id,
-        kakao_id=body.kakao_id,
+        kakao_id=effective_kakao_id(caller_, body.kakao_id),
         nickname=resolve_name(db, body.nickname.strip()),
         message=body.message.strip(),
         timestamp=datetime.now(timezone.utc),
@@ -41,10 +45,15 @@ def create_comment(body: schemas.VoteCommentCreate, db: Session = Depends(get_db
 
 
 @router.delete("/{comment_id}")
-def delete_comment(comment_id: int, db: Session = Depends(get_db)):
+def delete_comment(
+    comment_id: int,
+    caller_: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
     c = db.get(VoteComment, comment_id)
     if c is None:
         raise HTTPException(status_code=404, detail="comment not found")
+    assert_owner_or_admin(caller_, c.kakao_id)
     db.delete(c)
     db.commit()
     return {"deleted": 1}

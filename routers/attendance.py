@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import AttendanceVote, Match
-from deps import require_underduck
+from deps import Caller, caller, effective_kakao_id, require_admin, require_underduck
 from naming import resolve_name
 
 router = APIRouter(
@@ -26,16 +26,21 @@ def list_attendance(match_id: int | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.AttendanceOut)
-def upsert_attendance(body: schemas.AttendanceUpsert, db: Session = Depends(get_db)):
-    # (match_id, kakao_id) 기준 upsert
+def upsert_attendance(
+    body: schemas.AttendanceUpsert,
+    c: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
+    # (match_id, kakao_id) 기준 upsert. 신원 헤더가 오면 남의 응답을 못 바꾸도록 강제.
+    kakao_id = effective_kakao_id(c, body.kakao_id)
     row = db.scalar(
         select(AttendanceVote).where(
             AttendanceVote.match_id == body.match_id,
-            AttendanceVote.kakao_id == body.kakao_id,
+            AttendanceVote.kakao_id == kakao_id,
         )
     )
     if row is None:
-        row = AttendanceVote(match_id=body.match_id, kakao_id=body.kakao_id)
+        row = AttendanceVote(match_id=body.match_id, kakao_id=kakao_id)
         db.add(row)
     row.nickname = resolve_name(db, body.nickname.strip())
     row.response = body.response
@@ -63,7 +68,7 @@ def _sync_attendees(match_id: int, db: Session):
     m.attendees = ",".join(r.nickname.strip() for r in rows if r.nickname)
 
 
-@router.post("/{match_id}/finalize")
+@router.post("/{match_id}/finalize", dependencies=[Depends(require_admin)])
 def finalize_attendance(match_id: int, db: Session = Depends(get_db)):
     # "참석" 응답자 닉네임을 모아 matches.attendees(L) + attendance_status="마감" 기록
     rows = db.scalars(
@@ -81,7 +86,7 @@ def finalize_attendance(match_id: int, db: Session = Depends(get_db)):
     return {"attendees": attendees}
 
 
-@router.patch("/{match_id}/status")
+@router.patch("/{match_id}/status", dependencies=[Depends(require_admin)])
 def set_status(match_id: int, body: schemas.AttendanceStatus, db: Session = Depends(get_db)):
     m = db.get(Match, match_id)
     if m is None:

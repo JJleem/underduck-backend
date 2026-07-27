@@ -7,3 +7,15 @@ os.environ.setdefault(
     "postgresql://underduck:underduck@localhost:5432/underduck",
 )
 os.environ.setdefault("UNDERDUCK_API_SECRET", "test-secret")
+
+import pytest  # noqa: E402  (환경변수 설정 후에 import 해야 한다)
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_throttle():
+    """인증 실패 스로틀은 프로세스 전역 상태 → 테스트 간 누수 방지."""
+    import security
+
+    security.reset_throttle()
+    yield
+    security.reset_throttle()

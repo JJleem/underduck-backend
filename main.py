@@ -25,7 +25,18 @@ from routers import (
     vote_comment,
 )
 
-app = FastAPI(title="Underduck API")
+from security import SecurityHeadersMiddleware
+
+# 문서 라우트(/docs, /redoc, /openapi.json)는 라우터 의존성이 걸리지 않아 무인증 공개된다.
+# 전체 엔드포인트·스키마가 그대로 노출되므로 운영에서는 끈다.
+app = FastAPI(
+    title="Underduck API",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(health.router)
 app.include_router(matches.router)

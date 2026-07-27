@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import User
-from deps import require_underduck
+from deps import Caller, caller, effective_kakao_id, require_underduck
 
 router = APIRouter(
     prefix="/api/underduck/users",
@@ -30,11 +30,18 @@ def get_user(kakao_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.UserOut)
-def upsert_user(body: schemas.UserUpsert, db: Session = Depends(get_db)):
+def upsert_user(
+    body: schemas.UserUpsert,
+    c: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
+    # 신원 헤더가 오면 그 값이 우선 → 남의 프로필 덮어쓰기 차단.
+    # (최초 로그인 시점에는 아직 세션이 없어 헤더가 없다 → 본문 값 사용.)
+    kakao_id = effective_kakao_id(c, body.kakao_id)
     now = datetime.now(timezone.utc)
-    u = db.get(User, body.kakao_id)
+    u = db.get(User, kakao_id)
     if u is None:
-        u = User(kakao_id=body.kakao_id, joined_at=now)
+        u = User(kakao_id=kakao_id, joined_at=now)
         db.add(u)
     u.nickname = body.nickname
     u.profile_image = body.profile_image

@@ -1,6 +1,24 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+from security import validate_url
+
+# ── 입력 제약 ──────────────────────────────────────────────────────
+# 상한은 DB 컬럼 길이에 맞춘다. 지금까지 초과 값은 DB 에러(500)로 떨어졌으므로
+# 정상 입력의 동작은 그대로이고, 잘못된 입력만 500 → 422로 바뀐다.
+# Text 컬럼은 원래 무제한이라 저장 폭탄이 가능했다 → 넉넉한 상한으로 막는다.
+Tiny = Annotated[str, Field(max_length=10)]     # roster.no
+Short = Annotated[str, Field(max_length=20)]    # date/time/result/status/quarter/formation
+Code = Annotated[str, Field(max_length=50)]     # type / title_id / pref_pos
+KakaoId = Annotated[str, Field(max_length=64)]
+Name = Annotated[str, Field(max_length=100)]
+Title = Annotated[str, Field(max_length=200)]
+Body = Annotated[str, Field(max_length=10_000)]      # 사용자 작성 본문/댓글
+Csv = Annotated[str, Field(max_length=20_000)]       # 명단 CSV (goals/assists/attendees)
+# URL: 길이 상한 + 실행 가능한 스킴(javascript:, data: …) 차단 → 저장형 XSS 방지
+Url = Annotated[str, Field(max_length=1_000), AfterValidator(validate_url)]
 
 
 class MatchOut(BaseModel):
@@ -25,38 +43,38 @@ class MatchOut(BaseModel):
 
 
 class MatchCreate(BaseModel):
-    date: str
-    time: str
-    location: str
-    opponent: str
-    type: str
-    weather: str | None = None
+    date: Short
+    time: Short
+    location: Title
+    opponent: Title
+    type: Code
+    weather: Name | None = None
 
 
 class MatchPatch(BaseModel):
     # 부분 수정. 보낸 필드만 갱신(None=미변경). updateMatchResult/writeMatchMom/writeMatchWeather 모두 커버.
-    date: str | None = None
-    time: str | None = None
-    location: str | None = None
-    opponent: str | None = None
+    date: Short | None = None
+    time: Short | None = None
+    location: Title | None = None
+    opponent: Title | None = None
     our_score: int | None = None
     their_score: int | None = None
-    result: str | None = None
-    type: str | None = None
-    goals: str | None = None
-    assists: str | None = None
-    mom: str | None = None
-    attendees: str | None = None
-    weather: str | None = None
-    attendance_status: str | None = None
+    result: Short | None = None
+    type: Code | None = None
+    goals: Csv | None = None
+    assists: Csv | None = None
+    mom: Name | None = None
+    attendees: Csv | None = None
+    weather: Name | None = None
+    attendance_status: Short | None = None
 
 
 class PhotoAdd(BaseModel):
-    urls: list[str]
+    urls: list[Url] = Field(max_length=20)
 
 
 class PhotoRemove(BaseModel):
-    url: str
+    url: Url
 
 
 # ── mom_vote ──
@@ -72,15 +90,15 @@ class MomVoteOut(BaseModel):
 
 class MomVoteCreate(BaseModel):
     match_id: int
-    voter_name: str
-    voted_for: str
-    vote_type: str
+    voter_name: Name
+    voted_for: Name
+    vote_type: Short
 
 
 class MomVoteDelete(BaseModel):
     match_id: int
-    voter_name: str
-    vote_type: str | None = None
+    voter_name: Name
+    vote_type: Short | None = None
 
 
 # ── vote_comment ──
@@ -96,9 +114,9 @@ class VoteCommentOut(BaseModel):
 
 class VoteCommentCreate(BaseModel):
     match_id: int
-    kakao_id: str
-    nickname: str
-    message: str
+    kakao_id: KakaoId
+    nickname: Name
+    message: Body
 
 
 # ── attendance_vote ──
@@ -114,13 +132,13 @@ class AttendanceOut(BaseModel):
 
 class AttendanceUpsert(BaseModel):
     match_id: int
-    kakao_id: str
-    nickname: str
-    response: str  # "참석" | "불참" | "미정"
+    kakao_id: KakaoId
+    nickname: Name
+    response: Short  # "참석" | "불참" | "미정"
 
 
 class AttendanceStatus(BaseModel):
-    status: str  # "진행중" | "마감"
+    status: Short  # "진행중" | "마감"
 
 
 # ── featured ──
@@ -133,8 +151,8 @@ class FeaturedOut(BaseModel):
 
 
 class FeaturedUpsert(BaseModel):
-    player_name: str
-    title_ids: list[str]
+    player_name: Name
+    title_ids: list[Code] = Field(max_length=10)
 
 
 # ── push_subscription ──
@@ -146,13 +164,13 @@ class PushOut(BaseModel):
 
 
 class PushCreate(BaseModel):
-    endpoint: str
-    p256dh: str
-    auth: str
+    endpoint: Url
+    p256dh: Annotated[str, Field(max_length=200)]
+    auth: Annotated[str, Field(max_length=200)]
 
 
 class PushDelete(BaseModel):
-    endpoint: str
+    endpoint: Url
 
 
 # ── roster ──
@@ -168,16 +186,17 @@ class RosterOut(BaseModel):
 
 
 class RosterCreate(BaseModel):
-    no: str
-    name: str
-    pos: str
-    status: str
+    no: Tiny
+    name: Name
+    pos: Short
+    status: Short
 
 
 class RosterPrefPosUpdate(BaseModel):
-    # 선호 포지션은 본인만 설정 → 프론트 API 라우트가 세션 실명을 name으로 강제.
-    name: str
-    pref_pos: str  # CSV (최대 3, 프론트 검증)
+    # 선호 포지션은 본인만 설정.
+    # 신원 헤더(X-Underduck-User)가 오면 백엔드가 세션 사용자로 대상을 강제한다.
+    name: Name
+    pref_pos: Code  # CSV (최대 3)
 
 
 # ── stats (읽기전용) ──
@@ -205,11 +224,11 @@ class NoticeOut(BaseModel):
 
 
 class NoticeUpdate(BaseModel):
-    date: str
-    title: str
-    content: str
+    date: Short
+    title: Title
+    content: Body
     important: bool = False
-    location: str | None = None
+    location: Title | None = None
 
 
 # ── lineup ──
@@ -226,11 +245,11 @@ class LineupOut(BaseModel):
 
 class LineupUpsert(BaseModel):
     match_id: int
-    quarter: str
-    formation: str
-    players: list[str] = []
-    subs: list[str] = []
-    substitutions: list[dict] = []
+    quarter: Short
+    formation: Short
+    players: list[Name] = Field(default=[], max_length=30)
+    subs: list[Name] = Field(default=[], max_length=30)
+    substitutions: list[dict] = Field(default=[], max_length=100)
 
 
 # ── feedback ──
@@ -245,8 +264,8 @@ class FeedbackOut(BaseModel):
 
 class FeedbackCreate(BaseModel):
     match_id: int
-    name: str
-    message: str
+    name: Name
+    message: Body
 
 
 # ── users ──
@@ -260,9 +279,9 @@ class UserOut(BaseModel):
 
 
 class UserUpsert(BaseModel):
-    kakao_id: str
-    nickname: str
-    profile_image: str
+    kakao_id: KakaoId
+    nickname: Name
+    profile_image: Url
 
 
 # ── media ──
@@ -276,9 +295,9 @@ class MediaOut(BaseModel):
 
 
 class MediaCreate(BaseModel):
-    type: str
-    url: str
-    title: str
+    type: Short
+    url: Url
+    title: Title
 
 
 # ── name_alias (카카오 닉네임 → 로스터 실명) ──
@@ -289,8 +308,8 @@ class NameAliasOut(BaseModel):
 
 
 class NameAliasUpsert(BaseModel):
-    kakao_name: str
-    real_name: str
+    kakao_name: Name
+    real_name: Name
 
 
 # ── board_post (전술게시판) ──
@@ -308,15 +327,15 @@ class BoardPostOut(BaseModel):
 
 
 class BoardPostCreate(BaseModel):
-    kakao_id: str
-    author: str
-    title: str
-    youtube_url: str
-    body: str | None = None
+    kakao_id: KakaoId
+    author: Name
+    title: Title
+    youtube_url: Url
+    body: Body | None = None
 
 
 class BoardLikeToggle(BaseModel):
-    kakao_id: str
+    kakao_id: KakaoId
 
 
 class BoardLikeOut(BaseModel):
@@ -341,6 +360,6 @@ class BoardCommentOut(BaseModel):
 
 
 class BoardCommentCreate(BaseModel):
-    kakao_id: str
-    author: str
-    message: str
+    kakao_id: KakaoId
+    author: Name
+    message: Body

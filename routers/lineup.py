@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import Lineup
-from deps import require_underduck
+from deps import require_admin, require_underduck
 
 router = APIRouter(
     prefix="/api/underduck/lineup",
@@ -22,7 +22,7 @@ def list_lineup(match_id: int | None = None, db: Session = Depends(get_db)):
     return db.scalars(stmt).all()
 
 
-@router.put("")
+@router.put("", dependencies=[Depends(require_admin)])
 def upsert_lineup(body: schemas.LineupUpsert, db: Session = Depends(get_db)):
     players = [p for p in body.players if p]
     subs = [s for s in body.subs if s]

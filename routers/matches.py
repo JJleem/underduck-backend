@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import Match
-from deps import require_underduck
+from deps import require_admin, require_underduck
 
 router = APIRouter(
     prefix="/api/underduck/matches",
@@ -33,7 +33,7 @@ def get_match(match_id: int, db: Session = Depends(get_db)):
     return _get_or_404(db, match_id)
 
 
-@router.post("", response_model=schemas.MatchOut, status_code=201)
+@router.post("", response_model=schemas.MatchOut, status_code=201, dependencies=[Depends(require_admin)])
 def create_match(body: schemas.MatchCreate, db: Session = Depends(get_db)):
     next_id = (db.scalar(select(func.max(Match.match_id))) or -1) + 1
     m = Match(
@@ -53,7 +53,7 @@ def create_match(body: schemas.MatchCreate, db: Session = Depends(get_db)):
     return m
 
 
-@router.patch("/{match_id}", response_model=schemas.MatchOut)
+@router.patch("/{match_id}", response_model=schemas.MatchOut, dependencies=[Depends(require_admin)])
 def patch_match(match_id: int, body: schemas.MatchPatch, db: Session = Depends(get_db)):
     m = _get_or_404(db, match_id)
     for field, value in body.model_dump(exclude_unset=True).items():
@@ -63,7 +63,7 @@ def patch_match(match_id: int, body: schemas.MatchPatch, db: Session = Depends(g
     return m
 
 
-@router.post("/{match_id}/photos", response_model=schemas.MatchOut)
+@router.post("/{match_id}/photos", response_model=schemas.MatchOut, dependencies=[Depends(require_admin)])
 def add_photos(match_id: int, body: schemas.PhotoAdd, db: Session = Depends(get_db)):
     m = _get_or_404(db, match_id)
     current = [u for u in (m.photos.split(",") if m.photos else []) if u]
@@ -78,7 +78,7 @@ def add_photos(match_id: int, body: schemas.PhotoAdd, db: Session = Depends(get_
     return m
 
 
-@router.delete("/{match_id}/photos", response_model=schemas.MatchOut)
+@router.delete("/{match_id}/photos", response_model=schemas.MatchOut, dependencies=[Depends(require_admin)])
 def remove_photo(match_id: int, body: schemas.PhotoRemove, db: Session = Depends(get_db)):
     m = _get_or_404(db, match_id)
     current = [u for u in (m.photos.split(",") if m.photos else []) if u and u != body.url]

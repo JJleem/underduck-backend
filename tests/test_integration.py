@@ -38,11 +38,11 @@ def _make_match(client):
 
 
 def test_auth_blocks_every_domain(client):
-    # 헤더 없으면 전부 401
+    # 헤더 없으면 전부 차단. 같은 IP에서 실패가 쌓이면 401 → 429(브루트포스 스로틀)로 바뀐다.
     for path in ["/matches", "/mom-vote", "/vote-comment", "/attendance",
                  "/featured", "/push", "/roster", "/stats", "/notice",
                  "/lineup", "/feedback", "/users", "/media"]:
-        assert client.get(f"/api/underduck{path}").status_code == 401, path
+        assert client.get(f"/api/underduck{path}").status_code in (401, 429), path
 
 
 def test_matches_crud_and_photos(client):
@@ -203,3 +203,66 @@ def test_stats_smoke(client):
     # 빈 DB → 빈 리스트, 200
     r = client.get("/api/underduck/stats", headers=H)
     assert r.status_code == 200 and r.json() == []
+
+
+# ── 권한 검사 (실제 HTTP 경로) ──────────────────────────────────────
+# 핵심: 신원 헤더가 없으면 기존과 동일, 있으면 소유자/관리자만 통과.
+
+def _make_post(client, kakao_id="owner-1", headers=None):
+    r = client.post("/api/underduck/board", headers=headers or H, json={
+        "kakao_id": kakao_id, "author": "작성자", "title": "제목",
+        "youtube_url": "https://youtu.be/abc",
+    })
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def test_board_delete_unchanged_without_identity_header(client):
+    """레거시(헤더 없음): 지금까지처럼 그냥 삭제된다 → 프론트 컷오버 전 기능 영향 없음."""
+    pid = _make_post(client)
+    r = client.delete(f"/api/underduck/board/{pid}", headers=H)
+    assert r.status_code == 200 and r.json() == {"deleted": 1}
+
+
+def test_board_delete_blocked_for_non_author(client):
+    pid = _make_post(client)
+    r = client.delete(f"/api/underduck/board/{pid}", headers={
+        **H, "X-Underduck-User": "someone-else", "X-Underduck-Role": "member"})
+    assert r.status_code == 403
+    # 글은 그대로 남아 있어야 한다
+    assert client.get(f"/api/underduck/board/{pid}", headers=H).status_code == 200
+
+
+def test_board_delete_allowed_for_author_and_admin(client):
+    pid = _make_post(client)
+    assert client.delete(f"/api/underduck/board/{pid}", headers={
+        **H, "X-Underduck-User": "owner-1", "X-Underduck-Role": "member"}).status_code == 200
+
+    pid2 = _make_post(client)
+    assert client.delete(f"/api/underduck/board/{pid2}", headers={
+        **H, "X-Underduck-User": "admin-9", "X-Underduck-Role": "admin"}).status_code == 200
+
+
+def test_body_kakao_id_cannot_spoof_identity(client):
+    """본문에 남의 kakao_id를 넣어도 헤더 신원으로 덮어써 저장된다."""
+    pid = _make_post(client, kakao_id="victim", headers={
+        **H, "X-Underduck-User": "attacker", "X-Underduck-Role": "member"})
+    assert client.get(f"/api/underduck/board/{pid}", headers=H).json()["kakao_id"] == "attacker"
+
+
+def test_admin_only_endpoints_reject_member(client):
+    mid = _make_match(client)  # 레거시 헤더 → 기존대로 생성됨
+    member = {**H, "X-Underduck-User": "u1", "X-Underduck-Role": "member"}
+    assert client.patch(f"/api/underduck/matches/{mid}", headers=member,
+                        json={"our_score": 9}).status_code == 403
+    assert client.post("/api/underduck/roster", headers=member, json={
+        "no": "7", "name": "홍길동", "pos": "MF", "status": "활동"}).status_code == 403
+    assert client.post(f"/api/underduck/attendance/{mid}/finalize",
+                       headers=member).status_code == 403
+
+
+def test_xss_url_rejected_over_http(client):
+    r = client.post("/api/underduck/board", headers=H, json={
+        "kakao_id": "u1", "author": "가", "title": "t",
+        "youtube_url": "javascript:alert(document.cookie)"})
+    assert r.status_code == 422
