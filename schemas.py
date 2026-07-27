@@ -279,6 +279,11 @@ class UserOut(BaseModel):
     last_login: datetime | None = None
 
 
+class PseudonymResolve(BaseModel):
+    # 원본 카카오 ID. 쿼리/경로가 아니라 본문으로 받는다 — 서버 로그에 남지 않게.
+    kakao_id: Annotated[str, Field(max_length=64)]
+
+
 class PseudonymOut(BaseModel):
     kakao_id: str  # 가명 ID(pid)
 
