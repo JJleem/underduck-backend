@@ -292,3 +292,22 @@ def test_mom_vote_is_one_per_voter_and_type(client):
     client.post("/api/underduck/mom-vote", headers=H, json={
         "match_id": 0, "voter_name": "홍길동", "voted_for": "김철수", "vote_type": "수비"})
     assert len(client.get("/api/underduck/mom-vote?match_id=0", headers=H).json()) == 2
+
+
+def test_raw_kakao_id_never_travels_in_a_url(client):
+    """원본 카카오 ID를 URL에 실어 pid를 얻는 경로가 없어야 한다.
+
+    nginx access log는 쿼리스트링·경로를 그대로 기록한다. GET으로 변환이 되면
+    로그인할 때마다 원본 ID가 서버 로그에 평문으로 쌓여, DB에서 없앤 의미가 사라진다.
+    """
+    import security
+
+    pid = security.pseudonymize("3812457")
+
+    # 정상 경로: POST 본문 (본문은 access log에 안 남는다)
+    r = client.post("/api/underduck/users/resolve", headers=H, json={"kakao_id": "3812457"})
+    assert r.status_code == 200 and r.json() == {"kakao_id": pid}
+
+    # URL로는 변환되지 않는다 (/users/{kakao_id} 로 흘러가 404)
+    r = client.get("/api/underduck/users/resolve?kakao_id=3812457", headers=H)
+    assert r.status_code != 200 and pid not in r.text

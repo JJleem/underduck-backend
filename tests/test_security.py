@@ -160,18 +160,6 @@ def test_resolve_endpoint_returns_pid():
     assert r.json() == {"kakao_id": security.pseudonymize("3812457")}
 
 
-def test_resolve_does_not_accept_raw_id_in_query():
-    """원본 ID를 URL에 실어 pid를 얻는 경로가 없어야 한다.
-
-    nginx access log는 쿼리스트링을 그대로 기록하므로, GET으로 변환이 되면
-    로그인할 때마다 원본 카카오 ID가 서버 로그에 평문으로 쌓인다.
-    (지금은 GET /users/{kakao_id} 로 흘러가 404가 난다 — 변환은 일어나지 않는다.)
-    """
-    r = client.get("/api/underduck/users/resolve?kakao_id=3812457", headers=AUTH)
-    assert r.status_code != 200
-    assert security.pseudonymize("3812457") not in r.text
-
-
 def test_identity_header_accepts_raw_or_pid():
     """전환 기간에 프론트가 원본을 보내든 pid를 보내든 같은 신원으로 해석돼야 한다."""
     from starlette.datastructures import Headers
