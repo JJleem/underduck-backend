@@ -131,3 +131,46 @@ def test_admin_endpoint_rejects_member_role():
         json={"date": "2026-07-27", "title": "t", "content": "c"},
     )
     assert r.status_code == 403
+
+
+# ── kakao_id 가명화 ────────────────────────────────────────────────
+def test_pseudonym_is_deterministic_and_one_way():
+    a = security.pseudonymize("3812457")
+    assert a == security.pseudonymize("3812457")      # 결정론적 → 등호비교/UNIQUE 동작
+    assert a != security.pseudonymize("3812458")
+    assert "3812457" not in a                          # 원본이 남지 않는다
+    assert security.is_pseudonym(a) and len(a) == 64
+
+
+def test_pseudonymize_is_idempotent():
+    """이미 pid인 값은 재해싱하지 않는다 → 프론트 배포 전후 어느 쪽 값이 와도 동일 신원."""
+    pid = security.pseudonymize("3812457")
+    assert security.pseudonymize(pid) == pid
+
+
+def test_kakao_id_pseudonymized_at_schema_boundary():
+    body = schemas.BoardCommentCreate(kakao_id="3812457", author="가", message="m")
+    assert body.kakao_id == security.pseudonymize("3812457")
+    assert body.kakao_id != "3812457"
+
+
+def test_resolve_endpoint_returns_pid():
+    r = client.get("/api/underduck/users/resolve?kakao_id=3812457", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json() == {"kakao_id": security.pseudonymize("3812457")}
+
+
+def test_identity_header_accepts_raw_or_pid():
+    """전환 기간에 프론트가 원본을 보내든 pid를 보내든 같은 신원으로 해석돼야 한다."""
+    from starlette.datastructures import Headers
+    from starlette.requests import Request as StarletteRequest
+
+    from deps import caller as caller_dep
+
+    def mk(v):
+        scope = {"type": "http", "headers": Headers({"X-Underduck-User": v}).raw}
+        return caller_dep(StarletteRequest(scope))
+
+    pid = security.pseudonymize("3812457")
+    assert mk("3812457").kakao_id == pid
+    assert mk(pid).kakao_id == pid

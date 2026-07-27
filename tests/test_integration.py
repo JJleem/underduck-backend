@@ -244,10 +244,16 @@ def test_board_delete_allowed_for_author_and_admin(client):
 
 
 def test_body_kakao_id_cannot_spoof_identity(client):
-    """본문에 남의 kakao_id를 넣어도 헤더 신원으로 덮어써 저장된다."""
-    pid = _make_post(client, kakao_id="victim", headers={
+    """본문에 남의 kakao_id를 넣어도 헤더 신원으로 덮어써 저장된다(가명값으로)."""
+    import security
+
+    post_id = _make_post(client, kakao_id="victim", headers={
         **H, "X-Underduck-User": "attacker", "X-Underduck-Role": "member"})
-    assert client.get(f"/api/underduck/board/{pid}", headers=H).json()["kakao_id"] == "attacker"
+    stored = client.get(f"/api/underduck/board/{post_id}", headers=H).json()["kakao_id"]
+    assert stored == security.pseudonymize("attacker")
+    assert stored != security.pseudonymize("victim")
+    # 원본 카카오 ID는 응답 어디에도 남지 않는다
+    assert "victim" not in stored and "attacker" not in stored
 
 
 def test_admin_only_endpoints_reject_member(client):

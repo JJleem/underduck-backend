@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
-from security import validate_url
+from security import pseudonymize, validate_url
 
 # ── 입력 제약 ──────────────────────────────────────────────────────
 # 상한은 DB 컬럼 길이에 맞춘다. 지금까지 초과 값은 DB 에러(500)로 떨어졌으므로
@@ -12,7 +12,8 @@ from security import validate_url
 Tiny = Annotated[str, Field(max_length=10)]     # roster.no
 Short = Annotated[str, Field(max_length=20)]    # date/time/result/status/quarter/formation
 Code = Annotated[str, Field(max_length=50)]     # type / title_id / pref_pos
-KakaoId = Annotated[str, Field(max_length=64)]
+# kakao_id는 받는 즉시 가명화한다 → 원본이 DB에도 응답에도 남지 않는다.
+KakaoId = Annotated[str, Field(max_length=64), AfterValidator(pseudonymize)]
 Name = Annotated[str, Field(max_length=100)]
 Title = Annotated[str, Field(max_length=200)]
 Body = Annotated[str, Field(max_length=10_000)]      # 사용자 작성 본문/댓글
@@ -276,6 +277,10 @@ class UserOut(BaseModel):
     profile_image: str | None = None
     joined_at: datetime | None = None
     last_login: datetime | None = None
+
+
+class PseudonymOut(BaseModel):
+    kakao_id: str  # 가명 ID(pid)
 
 
 class UserUpsert(BaseModel):

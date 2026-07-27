@@ -59,7 +59,7 @@ class Caller:
 
 def caller(request: Request) -> Caller:
     """신원 헤더를 Caller로 변환. 헤더가 없으면 레거시 모드(검사 생략)."""
-    uid = (request.headers.get(_USER_HEADER) or "").strip() or None
+    uid = security.pseudonymize((request.headers.get(_USER_HEADER) or "").strip()) or None
     role = (request.headers.get(_ROLE_HEADER) or "").strip().lower() or None
     return Caller(kakao_id=uid, role=role)
 

@@ -4,6 +4,9 @@
 - 스로틀은 "인증에 실패한 요청"만 센다 → 정상 트래픽은 영향 0.
 - 보안 헤더는 응답 본문/상태코드를 건드리지 않는다.
 """
+import hashlib
+import hmac
+import os
 import re
 import time
 
@@ -99,3 +102,45 @@ def validate_url(value: str | None) -> str | None:
     if m and m.group(1).lower() not in _ALLOWED_SCHEMES:
         raise ValueError(f"허용되지 않는 URL 스킴입니다: {m.group(1)}")
     return value
+
+
+# ── kakao_id 가명화 ────────────────────────────────────────────────
+# 카카오 원본 ID는 영구 식별자라 유출되면 회수가 불가능하다. 그래서 **저장하지 않는다**.
+# 대신 서버만 아는 pepper로 HMAC-SHA256 치환한 값(pid)을 신원으로 쓴다.
+#
+#   pid = HMAC-SHA256(UNDERDUCK_ID_PEPPER, kakao_id)  → 64자 소문자 hex
+#
+# 결정론적이라 등호 비교·UNIQUE 제약·upsert가 전부 그대로 동작한다(기능 무손실).
+# 단방향이라 DB나 API 응답이 통째로 유출돼도 카카오 계정을 역산할 수 없다.
+#
+# 한계(정확히 알고 쓸 것): 원본 ID는 로그인 시 요청 본문으로 **전달은 된다**.
+# 없앨 수 있는 것은 "영구 저장"이지 "전송"이 아니다. 서버는 받는 즉시 해시하고 버린다.
+_ID_PEPPER = os.environ.get("UNDERDUCK_ID_PEPPER", "")
+if not _ID_PEPPER:
+    raise RuntimeError(
+        "UNDERDUCK_ID_PEPPER 환경변수가 설정되지 않았습니다. "
+        "`openssl rand -hex 32` 값을 서버 .env에 넣으세요. "
+        "이 값을 분실하면 기존 회원의 신원 연결이 끊깁니다(글·투표 소유권 소실)."
+    )
+
+_PID_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def is_pseudonym(value: str) -> bool:
+    """이미 가명화된 값(64자 hex)인가. 카카오 원본 ID는 10자리 안팎의 숫자라 겹치지 않는다."""
+    return bool(_PID_RE.match(value))
+
+
+def pseudonymize(kakao_id: str | None) -> str | None:
+    """카카오 원본 ID → 가명 ID(pid).
+
+    멱등: 이미 pid인 값이 들어오면 재해싱하지 않고 그대로 돌려준다.
+    덕분에 프론트가 원본을 보내든 pid를 보내든 같은 신원으로 해석되어,
+    프론트 배포 전후 어느 시점에도 쓰기가 깨지지 않는다(무중단 전환).
+    """
+    if not kakao_id:
+        return kakao_id
+    value = kakao_id.strip()
+    if is_pseudonym(value):
+        return value
+    return hmac.new(_ID_PEPPER.encode(), value.encode(), hashlib.sha256).hexdigest()

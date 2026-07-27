@@ -9,6 +9,7 @@ from db.connection import get_db
 from db.models import BoardComment, BoardLike, BoardPost, User
 from deps import Caller, assert_owner_or_admin, caller, effective_kakao_id, require_underduck
 from naming import resolve_name
+from security import pseudonymize
 
 router = APIRouter(
     prefix="/api/underduck/board",
@@ -45,7 +46,7 @@ def list_posts(db: Session = Depends(get_db)):
 def my_likes(kakao_id: str, c: Caller = Depends(caller), db: Session = Depends(get_db)):
     # 특정 사용자가 좋아요한 post_id 목록. (`/{post_id}` 보다 먼저 선언해 매칭 충돌 회피)
     # 신원 헤더가 오면 남의 목록을 조회하지 못하도록 세션 사용자로 강제한다.
-    target = effective_kakao_id(c, kakao_id)
+    target = effective_kakao_id(c, pseudonymize(kakao_id))
     rows = db.scalars(select(BoardLike.post_id).where(BoardLike.kakao_id == target)).all()
     return [r for r in rows if r is not None]
 

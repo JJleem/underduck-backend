@@ -7,6 +7,7 @@ os.environ.setdefault(
     "postgresql://underduck:underduck@localhost:5432/underduck",
 )
 os.environ.setdefault("UNDERDUCK_API_SECRET", "test-secret")
+os.environ.setdefault("UNDERDUCK_ID_PEPPER", "test-pepper")
 
 import pytest  # noqa: E402  (환경변수 설정 후에 import 해야 한다)
 
