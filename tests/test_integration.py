@@ -272,3 +272,23 @@ def test_xss_url_rejected_over_http(client):
         "kakao_id": "u1", "author": "가", "title": "t",
         "youtube_url": "javascript:alert(document.cookie)"})
     assert r.status_code == 422
+
+
+def test_mom_vote_is_one_per_voter_and_type(client):
+    """같은 (경기, 투표자, 부문)에 재투표하면 쌓이지 않고 갈아끼워진다."""
+    def vote(voted_for):
+        return client.post("/api/underduck/mom-vote", headers=H, json={
+            "match_id": 0, "voter_name": "홍길동", "voted_for": voted_for, "vote_type": "공격"})
+
+    vote("김철수")
+    vote("박영희")   # 프론트의 DELETE 없이 바로 재투표 = 직접 API 호출 시나리오
+    vote("이민수")
+
+    rows = client.get("/api/underduck/mom-vote?match_id=0", headers=H).json()
+    assert len(rows) == 1, "표가 쌓였다 — 표 조작이 가능하다"
+    assert rows[0]["voted_for"] == "이민수", "마지막 표가 남아야 한다"
+
+    # 다른 부문은 별개로 유지된다
+    client.post("/api/underduck/mom-vote", headers=H, json={
+        "match_id": 0, "voter_name": "홍길동", "voted_for": "김철수", "vote_type": "수비"})
+    assert len(client.get("/api/underduck/mom-vote?match_id=0", headers=H).json()) == 2

@@ -5,7 +5,11 @@ from db.connection import Base
 
 
 class MomVote(Base):
+    """MOM 투표. (경기, 투표자, 부문) 당 1표 — 라우터가 upsert로, DB가 UNIQUE로 이중 보장."""
     __tablename__ = "mom_vote"
+    __table_args__ = (
+        UniqueConstraint("match_id", "voter_name", "vote_type", name="uq_mom_vote_match_voter_type"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     match_id: Mapped[int | None] = mapped_column(Integer, index=True)
