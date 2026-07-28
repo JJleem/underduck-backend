@@ -366,6 +366,7 @@ class BoardPostOut(BaseModel):
     lineup: dict | None = None
     comment_count: int = 0
     like_count: int = 0
+    view_count: int = 0
 
 
 class BoardPostCreate(BaseModel):
@@ -376,6 +377,11 @@ class BoardPostCreate(BaseModel):
     youtube_url: Url | None = None
     body: Body | None = None
     lineup: BoardLineup | None = None
+
+
+class BoardViewOut(BaseModel):
+    """조회수 증가 후의 최신 누적값."""
+    view_count: int
 
 
 class BoardLikeToggle(BaseModel):

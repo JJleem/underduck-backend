@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 import schemas
@@ -94,6 +94,27 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         select(func.count(BoardLike.id)).where(BoardLike.post_id == post_id)
     )
     return item
+
+
+@router.post("/{post_id}/view", response_model=schemas.BoardViewOut)
+def increase_view(post_id: int, db: Session = Depends(get_db)):
+    """상세 진입 시 조회수 +1. 로그인 없이도 호출된다(본문은 비어 있어도 된다).
+
+    읽어서 애플리케이션에서 더하면 동시 조회가 서로 덮어써 유실된다.
+    DB에서 view_count = view_count + 1로 한 번에 올리고, RETURNING으로
+    그 트랜잭션이 만든 최신 값을 그대로 돌려준다.
+    """
+    row = db.execute(
+        update(BoardPost)
+        .where(BoardPost.id == post_id)
+        .values(view_count=BoardPost.view_count + 1)
+        .returning(BoardPost.view_count)
+    ).first()
+    if row is None:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="post not found")
+    db.commit()
+    return {"view_count": row[0]}
 
 
 @router.post("/{post_id}/like", response_model=schemas.BoardLikeOut)

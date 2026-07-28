@@ -301,6 +301,35 @@ def test_board_lineup_post_is_one_per_author(client):
     assert yt.status_code == 201 and yt.json()["lineup"] is None
 
 
+def test_board_view_count(client):
+    pid = _make_post(client)
+
+    # 새 글은 0에서 시작하고, 목록·상세 모두 view_count를 실어 보낸다
+    assert client.get(f"/api/underduck/board/{pid}", headers=H).json()["view_count"] == 0
+    assert client.get("/api/underduck/board", headers=H).json()[0]["view_count"] == 0
+
+    # 빈 본문으로 호출 가능하고, 증가된 최신 값을 돌려준다
+    r = client.post(f"/api/underduck/board/{pid}/view", headers=H, json={})
+    assert r.status_code == 200 and r.json() == {"view_count": 1}
+    # 본문 자체가 없어도 동작
+    assert client.post(f"/api/underduck/board/{pid}/view", headers=H).json() == {"view_count": 2}
+
+    # 조회 응답에도 누적값이 반영된다
+    assert client.get(f"/api/underduck/board/{pid}", headers=H).json()["view_count"] == 2
+
+    # 여러 번 호출해도 하나도 유실되지 않는다 (원자적 증가)
+    for _ in range(10):
+        client.post(f"/api/underduck/board/{pid}/view", headers=H, json={})
+    assert client.get(f"/api/underduck/board/{pid}", headers=H).json()["view_count"] == 12
+
+    # 없는 글은 404
+    assert client.post("/api/underduck/board/9999/view", headers=H, json={}).status_code == 404
+
+    # 조회수는 좋아요·댓글에 영향을 주지 않는다
+    detail = client.get(f"/api/underduck/board/{pid}", headers=H).json()
+    assert detail["like_count"] == 0 and detail["comment_count"] == 0
+
+
 def test_board_delete_unchanged_without_identity_header(client):
     """레거시(헤더 없음): 지금까지처럼 그냥 삭제된다 → 프론트 컷오버 전 기능 영향 없음."""
     pid = _make_post(client)

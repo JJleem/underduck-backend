@@ -174,6 +174,10 @@ class BoardPost(Base):
     body: Mapped[str | None] = mapped_column(Text)             # 본문(선택)
     created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))  # 수정 시각(수정됨 표시·정렬)
+    # 조회수. 동시 조회에서 유실되지 않도록 DB에서 원자적으로 증가시킨다.
+    view_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
     # 전술 글: {formation, positions, players, instructions, tactic}. 유튜브 글은 NULL.
     lineup: Mapped[dict | None] = mapped_column(JSON)
 
