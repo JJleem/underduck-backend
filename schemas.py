@@ -334,13 +334,19 @@ class NameAliasUpsert(BaseModel):
 
 
 # ── board_post (전술게시판) ──
-class BoardLineup(BaseModel):
-    """게시판 전술 글에 붙는 선발 11명 라인업."""
+class BoardLineupQuarter(BaseModel):
+    """게시판 전술 글의 쿼터 하나 — 선발 11명 배치."""
+    quarter: Short = "1Q"
     formation: Short = ""
     positions: list[Point] | None = Field(default=None, max_length=11)
     players: list[Name] = Field(default=[], max_length=11)
     instructions: list[Code] = Field(default=[], max_length=11)
     tactic: Short | None = None
+
+
+class BoardLineup(BaseModel):
+    """전술 글 본체. 한 사람이 쿼터별로 여러 안을 낼 수 있다."""
+    quarters: list[BoardLineupQuarter] = Field(default=[], max_length=4)
 
 
 class BoardPostOut(BaseModel):

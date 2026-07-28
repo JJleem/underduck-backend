@@ -244,29 +244,41 @@ def _make_post(client, kakao_id="owner-1", headers=None):
     return r.json()["id"]
 
 
-def test_board_lineup_post_is_one_per_author(client):
-    lineup = {
+def _quarter(q="1Q", tactic="press"):
+    return {
+        "quarter": q,
         "formation": "4-3-3",
         "positions": [[50.0, 88.0]] + [[10.0 * i, 40.0] for i in range(10)],
         "players": ["p%d" % i for i in range(11)],
         "instructions": ["", "overlap,press"] + [""] * 9,
-        "tactic": "press",
+        "tactic": tactic,
     }
+
+
+def test_board_lineup_post_is_one_per_author(client):
+    lineup = {"quarters": [_quarter("1Q"), _quarter("2Q", "counter")]}
     body = {"kakao_id": "coach-1", "author": "감독", "title": "내 전술", "lineup": lineup}
 
     r = client.post("/api/underduck/board", headers=H, json=body)
     assert r.status_code == 201
     pid = r.json()["id"]
-    assert r.json()["lineup"]["tactic"] == "press"
+    quarters = r.json()["lineup"]["quarters"]
+    assert [q["quarter"] for q in quarters] == ["1Q", "2Q"]
+    assert quarters[1]["tactic"] == "counter"
     assert r.json()["updated_at"] is None  # 최초 작성은 수정 표시 없음
 
     # 같은 작성자가 다시 올리면 새 글이 아니라 기존 글이 갱신된다
     again = client.post("/api/underduck/board", headers=H, json={
-        **body, "title": "내 전술 v2", "lineup": {**lineup, "tactic": "counter"}})
+        **body, "title": "내 전술 v2", "lineup": {"quarters": [_quarter("3Q", "attack")]}})
     assert again.json()["id"] == pid
     assert again.json()["title"] == "내 전술 v2"
-    assert again.json()["lineup"]["tactic"] == "counter"
+    assert [q["quarter"] for q in again.json()["lineup"]["quarters"]] == ["3Q"]
     assert again.json()["updated_at"] is not None  # 수정됨 표시
+
+    # 쿼터는 최대 4개
+    over = client.post("/api/underduck/board", headers=H, json={
+        **body, "lineup": {"quarters": [_quarter("%dQ" % i) for i in range(1, 6)]}})
+    assert over.status_code == 422
 
     # 다른 작성자는 자기 글을 따로 가진다
     other = client.post("/api/underduck/board", headers=H, json={
