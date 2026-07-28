@@ -275,6 +275,12 @@ def test_board_lineup_post_is_one_per_author(client):
     assert [q["quarter"] for q in again.json()["lineup"]["quarters"]] == ["3Q"]
     assert again.json()["updated_at"] is not None  # 수정됨 표시
 
+    # 빈 쿼터 목록은 거부 — 옛 구조 payload가 라인업을 비워버리는 사고 방지
+    assert client.post("/api/underduck/board", headers=H, json={
+        **body, "lineup": {"quarters": []}}).status_code == 422
+    assert client.post("/api/underduck/board", headers=H, json={
+        **body, "lineup": {"formation": "4-3-3", "players": []}}).status_code == 422
+
     # 쿼터는 최대 4개
     over = client.post("/api/underduck/board", headers=H, json={
         **body, "lineup": {"quarters": [_quarter("%dQ" % i) for i in range(1, 6)]}})

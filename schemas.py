@@ -345,8 +345,12 @@ class BoardLineupQuarter(BaseModel):
 
 
 class BoardLineup(BaseModel):
-    """전술 글 본체. 한 사람이 쿼터별로 여러 안을 낼 수 있다."""
-    quarters: list[BoardLineupQuarter] = Field(default=[], max_length=4)
+    """전술 글 본체. 한 사람이 쿼터별로 여러 안을 낼 수 있다.
+
+    min_length=1: 구조가 안 맞는 payload(예: 배포 과도기의 옛 프론트)가 들어와도
+    quarters가 비어버린 채로 저장되지 않도록 422로 막는다.
+    """
+    quarters: list[BoardLineupQuarter] = Field(min_length=1, max_length=4)
 
 
 class BoardPostOut(BaseModel):
