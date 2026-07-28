@@ -45,6 +45,9 @@ def upsert_lineup(body: schemas.LineupUpsert, db: Session = Depends(get_db)):
     row.players = body.players
     row.subs = body.subs
     row.substitutions = body.substitutions
+    row.positions = body.positions
+    row.tactic = body.tactic
+    row.instructions = body.instructions
     db.commit()
     db.refresh(row)
     return schemas.LineupOut.model_validate(row)

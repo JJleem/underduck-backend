@@ -171,6 +171,33 @@ def test_lineup_upsert_and_delete(client):
     assert client.get("/api/underduck/lineup?match_id=0", headers=H).json() == []
 
 
+def test_lineup_positions_and_tactic(client):
+    base = {"match_id": 0, "quarter": "1Q", "formation": "4-4-2",
+            "players": ["p%d" % i for i in range(11)], "subs": [], "substitutions": []}
+
+    # 좌표·전술 미지정 → NULL (기존 라인업 하위호환)
+    client.put("/api/underduck/lineup", headers=H, json=base)
+    row = client.get("/api/underduck/lineup?match_id=0", headers=H).json()[0]
+    assert row["positions"] is None and row["tactic"] is None
+
+    # 자유 배치 좌표 + 팀 전술 + 개인 전술 저장
+    pos = [[50.0, 88.0]] + [[10.0 * i, 40.0] for i in range(10)]
+    ins = ["hold_line"] + ["join_attack,press_high"] * 5 + [""] * 5
+    client.put("/api/underduck/lineup", headers=H,
+               json={**base, "positions": pos, "tactic": "counter", "instructions": ins})
+    row = client.get("/api/underduck/lineup?match_id=0", headers=H).json()[0]
+    assert row["positions"] == pos and row["tactic"] == "counter"
+    assert row["instructions"] == ins
+
+    # 범위 밖 좌표 / 11개 초과 / 잘못된 쌍은 거부
+    assert client.put("/api/underduck/lineup", headers=H,
+                      json={**base, "positions": [[50, 120]]}).status_code == 422
+    assert client.put("/api/underduck/lineup", headers=H,
+                      json={**base, "positions": [[50, 50]] * 12}).status_code == 422
+    assert client.put("/api/underduck/lineup", headers=H,
+                      json={**base, "positions": [[50]]}).status_code == 422
+
+
 def test_feedback(client):
     r = client.post("/api/underduck/feedback", headers=H, json={
         "match_id": 0, "name": "홍", "message": "수고"})
@@ -215,6 +242,45 @@ def _make_post(client, kakao_id="owner-1", headers=None):
     })
     assert r.status_code == 201, r.text
     return r.json()["id"]
+
+
+def test_board_lineup_post_is_one_per_author(client):
+    lineup = {
+        "formation": "4-3-3",
+        "positions": [[50.0, 88.0]] + [[10.0 * i, 40.0] for i in range(10)],
+        "players": ["p%d" % i for i in range(11)],
+        "instructions": ["", "overlap,press"] + [""] * 9,
+        "tactic": "press",
+    }
+    body = {"kakao_id": "coach-1", "author": "감독", "title": "내 전술", "lineup": lineup}
+
+    r = client.post("/api/underduck/board", headers=H, json=body)
+    assert r.status_code == 201
+    pid = r.json()["id"]
+    assert r.json()["lineup"]["tactic"] == "press"
+    assert r.json()["updated_at"] is None  # 최초 작성은 수정 표시 없음
+
+    # 같은 작성자가 다시 올리면 새 글이 아니라 기존 글이 갱신된다
+    again = client.post("/api/underduck/board", headers=H, json={
+        **body, "title": "내 전술 v2", "lineup": {**lineup, "tactic": "counter"}})
+    assert again.json()["id"] == pid
+    assert again.json()["title"] == "내 전술 v2"
+    assert again.json()["lineup"]["tactic"] == "counter"
+    assert again.json()["updated_at"] is not None  # 수정됨 표시
+
+    # 다른 작성자는 자기 글을 따로 가진다
+    other = client.post("/api/underduck/board", headers=H, json={
+        **body, "kakao_id": "coach-2", "title": "다른 전술"})
+    assert other.json()["id"] != pid
+
+    posts = client.get("/api/underduck/board", headers=H).json()
+    assert len([p for p in posts if p["lineup"]]) == 2
+
+    # 유튜브 글은 lineup 없이 그대로 동작
+    yt = client.post("/api/underduck/board", headers=H, json={
+        "kakao_id": "coach-1", "author": "감독", "title": "영상",
+        "youtube_url": "https://youtu.be/abc"})
+    assert yt.status_code == 201 and yt.json()["lineup"] is None
 
 
 def test_board_delete_unchanged_without_identity_header(client):

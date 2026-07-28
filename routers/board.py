@@ -32,7 +32,13 @@ def list_posts(db: Session = Depends(get_db)):
             select(BoardLike.post_id, func.count(BoardLike.id)).group_by(BoardLike.post_id)
         ).all()
     )
-    posts = db.scalars(select(BoardPost).order_by(BoardPost.id.desc())).all()
+    # 수정된 글은 최신으로 올라온다 (수정 시각 우선, 없으면 작성 시각).
+    posts = db.scalars(
+        select(BoardPost).order_by(
+            func.coalesce(BoardPost.updated_at, BoardPost.created_at).desc(),
+            BoardPost.id.desc(),
+        )
+    ).all()
     out = []
     for p in posts:
         item = schemas.BoardPostOut.model_validate(p)
@@ -120,13 +126,33 @@ def create_post(
     c: Caller = Depends(caller),
     db: Session = Depends(get_db),
 ):
+    kakao_id = effective_kakao_id(c, body.kakao_id)
+    now = datetime.now(timezone.utc)
+
+    # 전술 글은 1인 1개 — 이미 있으면 새로 만들지 않고 그 글을 수정한다.
+    if body.lineup is not None:
+        existing = db.scalar(
+            select(BoardPost)
+            .where(BoardPost.kakao_id == kakao_id, BoardPost.lineup.is_not(None))
+            .order_by(BoardPost.id.desc())
+        )
+        if existing is not None:
+            existing.title = body.title.strip()
+            existing.body = (body.body or "").strip() or None
+            existing.lineup = body.lineup.model_dump()
+            existing.updated_at = now
+            db.commit()
+            db.refresh(existing)
+            return existing
+
     p = BoardPost(
-        kakao_id=effective_kakao_id(c, body.kakao_id),
+        kakao_id=kakao_id,
         author=resolve_name(db, body.author.strip()),
         title=body.title.strip(),
-        youtube_url=body.youtube_url.strip(),
+        youtube_url=(body.youtube_url or "").strip() or None,
         body=(body.body or "").strip() or None,
-        created_at=datetime.now(timezone.utc),
+        lineup=body.lineup.model_dump() if body.lineup is not None else None,
+        created_at=now,
     )
     db.add(p)
     db.commit()

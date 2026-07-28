@@ -20,6 +20,9 @@ Body = Annotated[str, Field(max_length=10_000)]      # 사용자 작성 본문/�
 Csv = Annotated[str, Field(max_length=20_000)]       # 명단 CSV (goals/assists/attendees)
 # URL: 길이 상한 + 실행 가능한 스킴(javascript:, data: …) 차단 → 저장형 XSS 방지
 Url = Annotated[str, Field(max_length=1_000), AfterValidator(validate_url)]
+# 라인업 자유 배치 좌표: 필드 기준 x, y 백분율 한 쌍
+Coord = Annotated[float, Field(ge=0, le=100)]
+Point = Annotated[list[Coord], Field(min_length=2, max_length=2)]
 
 
 class MatchOut(BaseModel):
@@ -242,6 +245,9 @@ class LineupOut(BaseModel):
     players: list[str] | None = None
     subs: list[str] | None = None
     substitutions: list[dict] | None = None
+    positions: list[list[float]] | None = None
+    tactic: str | None = None
+    instructions: list[str] | None = None
 
 
 class LineupUpsert(BaseModel):
@@ -251,6 +257,11 @@ class LineupUpsert(BaseModel):
     players: list[Name] = Field(default=[], max_length=30)
     subs: list[Name] = Field(default=[], max_length=30)
     substitutions: list[dict] = Field(default=[], max_length=100)
+    # 좌표는 선발 11명과 1:1. 없으면 포메이션 프리셋을 쓴다.
+    positions: list[Point] | None = Field(default=None, max_length=11)
+    tactic: Short | None = None
+    # 선발 11명의 개인 전술. 한 칸에 여러 개면 "id,id" (빈 문자열 = 지시 없음)
+    instructions: list[Code] | None = Field(default=None, max_length=11)
 
 
 # ── feedback ──
@@ -323,6 +334,15 @@ class NameAliasUpsert(BaseModel):
 
 
 # ── board_post (전술게시판) ──
+class BoardLineup(BaseModel):
+    """게시판 전술 글에 붙는 선발 11명 라인업."""
+    formation: Short = ""
+    positions: list[Point] | None = Field(default=None, max_length=11)
+    players: list[Name] = Field(default=[], max_length=11)
+    instructions: list[Code] = Field(default=[], max_length=11)
+    tactic: Short | None = None
+
+
 class BoardPostOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -332,6 +352,8 @@ class BoardPostOut(BaseModel):
     youtube_url: str | None = None
     body: str | None = None
     created_at: datetime | None = None
+    updated_at: datetime | None = None
+    lineup: dict | None = None
     comment_count: int = 0
     like_count: int = 0
 
@@ -340,8 +362,10 @@ class BoardPostCreate(BaseModel):
     kakao_id: KakaoId
     author: Name
     title: Title
-    youtube_url: Url
+    # 유튜브 글이면 링크가, 전술 글이면 lineup이 온다.
+    youtube_url: Url | None = None
     body: Body | None = None
+    lineup: BoardLineup | None = None
 
 
 class BoardLikeToggle(BaseModel):

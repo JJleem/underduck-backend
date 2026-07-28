@@ -119,6 +119,9 @@ class Lineup(Base):
     players: Mapped[list | None] = mapped_column(JSON)        # 선발 11 (배열)
     subs: Mapped[list | None] = mapped_column(JSON)           # 대기 5 (배열)
     substitutions: Mapped[list | None] = mapped_column(JSON)  # [{out,in,time}]
+    positions: Mapped[list | None] = mapped_column(JSON)      # 자유 배치 좌표 [[x,y]×11], NULL이면 포메이션 프리셋
+    tactic: Mapped[str | None] = mapped_column(String(20))    # 팀 전술 id (attack/balance/…)
+    instructions: Mapped[list | None] = mapped_column(JSON)   # 선발 11명 개인 전술 id (빈 문자열 = 없음)
 
 
 class Feedback(Base):
@@ -170,6 +173,9 @@ class BoardPost(Base):
     youtube_url: Mapped[str | None] = mapped_column(Text)      # 유튜브 링크 원본
     body: Mapped[str | None] = mapped_column(Text)             # 본문(선택)
     created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))  # 수정 시각(수정됨 표시·정렬)
+    # 전술 글: {formation, positions, players, instructions, tactic}. 유튜브 글은 NULL.
+    lineup: Mapped[dict | None] = mapped_column(JSON)
 
 
 class BoardComment(Base):
