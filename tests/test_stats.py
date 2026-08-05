@@ -1,7 +1,9 @@
 """stats 집계 엔드포인트 회귀 테스트 (SQLite in-memory + get_db 오버라이드).
 
-matches 명단(골/도움/참석)과 mom_vote(공격/수비 부문 투표)에서 선수별 통계를
-매 요청 집계하는지 검증한다.
+matches 명단(골/도움/참석/MOM)에서 선수별 통계를 매 요청 집계하는지 검증한다.
+
+MOM 은 확정 기록(matches.mom)에서 센다. 예전엔 mom_vote 에서 셌는데 투표가
+없던 옛 경기의 MOM 이 통째로 빠져 화면과 어긋났다.
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -33,19 +35,12 @@ def client():
         models.Roster(no="4", name="박영희", pos="DF", status="활동"),
     ])
     db.add_all([
+        # MOM: "/" 는 공격/수비 구분, "," 는 같은 부문 공동 수상. 둘 다 섞여 들어온다.
         models.Match(match_id=0, goals="홍길동,홍길동", assists="박영희,",
-                     attendees="홍길동,김철수,박영희"),
+                     attendees="홍길동,김철수,박영희", mom="홍길동 / 박영희"),
         models.Match(match_id=1, goals="김철수", assists="김철수",
-                     attendees="홍길동,김철수"),
+                     attendees="홍길동,김철수", mom="홍길동,김철수 / 박영희"),
         models.Match(match_id=2, goals="게스트", attendees="게스트"),  # roster 밖
-    ])
-    db.add_all([
-        # 경기0 공격: 홍길동 2표 vs 김철수 1표 → 홍길동
-        models.MomVote(match_id=0, voter_name="a", voted_for="홍길동", vote_type="공격"),
-        models.MomVote(match_id=0, voter_name="b", voted_for="홍길동", vote_type="공격"),
-        models.MomVote(match_id=0, voter_name="c", voted_for="김철수", vote_type="공격"),
-        # 경기0 수비: 박영희 → 박영희
-        models.MomVote(match_id=0, voter_name="a", voted_for="박영희", vote_type="수비"),
     ])
     db.commit()
 
@@ -71,10 +66,13 @@ def test_stats_aggregation(client):
     # 도움
     assert by["김철수"]["assists"] == 1
     assert by["박영희"]["assists"] == 1
-    # mom: 공격/수비 부문별 최다득표 1회씩
-    assert by["홍길동"]["mom"] == 1
-    assert by["박영희"]["mom"] == 1
-    assert by["김철수"]["mom"] == 0
+    # mom: 확정 기록에서. "/" 와 "," 를 모두 풀어야 맞는 수가 나온다.
+    #   홍길동 = 경기0 + 경기1 = 2   (경기1 은 "," 뒤가 아니라 앞)
+    #   박영희 = 경기0 + 경기1 = 2   ("/" 뒤 — 쉼표로만 자르면 통째로 놓친다)
+    #   김철수 = 경기1 = 1           ("," 로 묶인 공동 수상)
+    assert by["홍길동"]["mom"] == 2
+    assert by["박영희"]["mom"] == 2
+    assert by["김철수"]["mom"] == 1
     # roster 정보(no/pos) 채워짐
     assert by["홍길동"]["no"] == "7" and by["홍길동"]["pos"] == "FW"
     # roster 밖 게스트도 누락되지 않고 no/pos는 비어있음

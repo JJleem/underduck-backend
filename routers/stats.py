@@ -6,13 +6,19 @@ from sqlalchemy.orm import Session
 
 import schemas
 from db.connection import get_db
-from db.models import Match, MomVote, Roster
+from db.models import Match, Roster
 from deps import require_underduck
 
 # stats는 매 요청마다 원천 데이터에서 집계한다(시트 폐기 대비).
 #   - apps/goals/assists: matches 행의 명단(쉼표 결합 텍스트)에서 이름 등장 횟수
-#   - mom: mom_vote를 (경기 × vote_type[공격/수비])별 최다득표로 집계
+#   - mom: matches.mom(확정 기록)에서 집계
 # (구버전: 시트 수식 산출물을 stats 테이블에 스냅샷해 읽기만 했음 → 폐기)
+#
+# ⚠️ mom 은 예전에 mom_vote(투표 테이블)에서 셌는데, 그러면 확정 기록과 어긋난다.
+#    투표 기능이 생기기 전 경기들은 관리자가 MOM 을 직접 넣어서 투표 기록이 아예
+#    없다. 실제로 5명이 안 맞았다(강창훈 0 vs 2, 김광민 0 vs 1, 김주성 0 vs 1,
+#    김준수 3 vs 4, 안원진 2 vs 3). 화면 어디서나 보여 주는 값은 matches.mom 이므로
+#    집계도 거기서 한다 — 그래야 "프로필엔 왕관 4개인데 스탯은 3" 이 다시 안 생긴다.
 router = APIRouter(
     prefix="/api/underduck/stats",
     tags=["stats"],
@@ -25,6 +31,22 @@ def _names(csv: str | None) -> list[str]:
     if not csv:
         return []
     return [n.strip() for n in csv.split(",") if n and n.strip()]
+
+
+def _mom_names(raw: str | None) -> list[str]:
+    """MOM 필드 → 수상자 이름들.
+
+    구분자가 두 겹이다. `/` 는 공격 MOM / 수비 MOM 을 나누고, `,` 는 같은 부문의
+    공동 수상을 나눈다. 실제 데이터에 "금상덕,김준수 / 안원진" 처럼 둘 다 섞여 있다.
+    쉼표로만 자르면 `/` 로 묶인 사람을 통째로 놓친다.
+    (프론트의 match-result.momNames 와 같은 규칙)
+    """
+    if not raw:
+        return []
+    out: list[str] = []
+    for part in raw.split("/"):
+        out.extend(n.strip() for n in part.split(",") if n.strip())
+    return out
 
 
 @router.get("", response_model=list[schemas.StatOut])
@@ -42,20 +64,9 @@ def list_stats(db: Session = Depends(get_db)):
             assists[name] += 1
         for name in set(_names(m.attendees)):  # 한 경기당 출전 1회
             apps[name] += 1
-
-    # ── mom_vote: (경기, vote_type) 부문별 최다득표자 = 그 부문 MOM ──
-    # vote_type은 공격/수비로 나뉘어 부문별로 한 명씩 나온다. 동률이면 동률자 모두 1회 인정.
-    tally: dict[tuple[int, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for v in db.scalars(select(MomVote)):
-        if v.match_id is None or not v.voted_for:
-            continue
-        key = (v.match_id, (v.vote_type or "").strip())
-        tally[key][v.voted_for.strip()] += 1
-    for counts in tally.values():
-        top = max(counts.values())
-        for name, c in counts.items():
-            if c == top:
-                mom[name] += 1
+        # 한 경기에서 같은 사람이 두 번 적혀도 1회로 센다.
+        for name in set(_mom_names(m.mom)):
+            mom[name] += 1
 
     # ── 선수 명부: roster 우선(no/pos 채움) + 명단에만 등장하는 이름 뒤에 추가 ──
     seen: set[str] = set()
