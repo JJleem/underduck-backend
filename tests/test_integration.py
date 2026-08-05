@@ -424,3 +424,52 @@ def test_raw_kakao_id_never_travels_in_a_url(client):
     # URL로는 변환되지 않는다 (/users/{kakao_id} 로 흘러가 404)
     r = client.get("/api/underduck/users/resolve?kakao_id=3812457", headers=H)
     assert r.status_code != 200 and pid not in r.text
+
+
+def test_match_like_toggle(client):
+    mid = _make_match(client)
+
+    # 새 경기는 0에서 시작하고, 목록·상세 모두 like_count 를 실어 보낸다
+    assert client.get(f"/api/underduck/matches/{mid}", headers=H).json()["like_count"] == 0
+    assert client.get("/api/underduck/matches", headers=H).json()[0]["like_count"] == 0
+
+    # 누르면 1, 다시 누르면 0 (같은 사람은 한 번만)
+    r = client.post(f"/api/underduck/matches/{mid}/like", headers=H, json={"kakao_id": "u-1"})
+    assert r.status_code == 200 and r.json() == {"liked": True, "like_count": 1}
+    r = client.post(f"/api/underduck/matches/{mid}/like", headers=H, json={"kakao_id": "u-1"})
+    assert r.json() == {"liked": False, "like_count": 0}
+
+    # 서로 다른 사람은 각각 쌓인다
+    client.post(f"/api/underduck/matches/{mid}/like", headers=H, json={"kakao_id": "u-1"})
+    client.post(f"/api/underduck/matches/{mid}/like", headers=H, json={"kakao_id": "u-2"})
+    assert client.get(f"/api/underduck/matches/{mid}", headers=H).json()["like_count"] == 2
+
+    # 관리자 수정 응답에도 좋아요 수가 유지된다 (0으로 되돌아가면 화면이 깜빡인다)
+    patched = client.patch(f"/api/underduck/matches/{mid}", headers=H, json={"result": "승"})
+    assert patched.status_code == 200 and patched.json()["like_count"] == 2
+
+    # 없는 경기는 404
+    assert client.post("/api/underduck/matches/9999/like", headers=H,
+                       json={"kakao_id": "u-1"}).status_code == 404
+
+
+def test_match_my_likes(client):
+    import security
+
+    mid = _make_match(client)
+    client.post(f"/api/underduck/matches/{mid}/like", headers=H, json={"kakao_id": "u-1"})
+
+    # 원본 ID로 물어도 가명 ID로 저장된 내 좋아요를 찾아준다
+    r = client.get("/api/underduck/matches/my-likes?kakao_id=u-1", headers=H)
+    assert r.status_code == 200 and r.json() == [mid]
+
+    # 남의 목록은 비어 있다
+    assert client.get("/api/underduck/matches/my-likes?kakao_id=u-2", headers=H).json() == []
+
+    # 신원 헤더가 있으면 세션 사용자로 강제된다 (남의 목록 조회 차단)
+    r = client.get("/api/underduck/matches/my-likes?kakao_id=u-1", headers={
+        **H, "X-Underduck-User": "u-2", "X-Underduck-Role": "member"})
+    assert r.json() == []
+
+    # /my-likes 가 /{match_id} 로 잘못 매칭되지 않는다
+    assert security.pseudonymize("u-1") != "u-1"

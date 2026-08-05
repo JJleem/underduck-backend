@@ -203,3 +203,18 @@ class BoardLike(Base):
     post_id: Mapped[int | None] = mapped_column(Integer, index=True)
     kakao_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class MatchLike(Base):
+    """경기 피드 좋아요. 인당 1번(match_id+kakao_id 유니크).
+
+    board_like 와 같은 모양이지만 참조 대상이 다르므로 테이블을 나눈다.
+    (한 테이블에 target_type 을 두면 두 기능의 삭제·집계가 서로 얽힌다)
+    """
+    __tablename__ = "match_like"
+    __table_args__ = (UniqueConstraint("match_id", "kakao_id", name="uq_match_like_match_user"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    match_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    kakao_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))

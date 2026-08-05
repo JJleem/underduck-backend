@@ -44,6 +44,17 @@ class MatchOut(BaseModel):
     photos: str | None = None
     weather: str | None = None
     attendance_status: str | None = None
+    # 피드 좋아요 수. 목록 조회에서 한 번에 집계해 채운다(경기당 추가 왕복 없음).
+    like_count: int = 0
+
+
+class MatchLikeToggle(BaseModel):
+    kakao_id: KakaoId
+
+
+class MatchLikeOut(BaseModel):
+    liked: bool
+    like_count: int
 
 
 class MatchCreate(BaseModel):
