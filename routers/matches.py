@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 import schemas
 from db.connection import get_db
-from db.models import Match, MatchLike
+from db.models import Match, MatchLike, User
 from deps import Caller, caller, effective_kakao_id, require_admin, require_underduck
+from naming import resolve_name
 from security import pseudonymize
 
 router = APIRouter(
@@ -64,6 +65,28 @@ def my_likes(kakao_id: str, c: Caller = Depends(caller), db: Session = Depends(g
 @router.get("/{match_id}", response_model=schemas.MatchOut)
 def get_match(match_id: int, db: Session = Depends(get_db)):
     return _out(db, _get_or_404(db, match_id))
+
+
+@router.get("/{match_id}/likers", response_model=list[str])
+def likers(match_id: int, db: Session = Depends(get_db)):
+    """누가 좋아요를 눌렀는지, 누른 순서대로.
+
+    이름을 못 찾은 행도 자리를 남긴다. 조용히 빼면 목록 길이가 like_count 와
+    어긋나서, 화면에 "3"이라 적힌 옆에 두 명만 뜬다.
+    """
+    _get_or_404(db, match_id)
+    rows = db.scalars(
+        select(MatchLike)
+        .where(MatchLike.match_id == match_id)
+        .order_by(MatchLike.created_at, MatchLike.id)
+    ).all()
+    nick_by_id = {u.kakao_id: (u.nickname or "") for u in db.scalars(select(User)).all()}
+    out = []
+    for r in rows:
+        nickname = (nick_by_id.get(r.kakao_id) or "").strip()
+        # resolve_name 은 등록된 별칭이면 실명으로, 아니면 닉네임 그대로 돌려준다.
+        out.append((resolve_name(db, nickname) if nickname else "") or "알 수 없음")
+    return out
 
 
 @router.post("/{match_id}/like", response_model=schemas.MatchLikeOut)

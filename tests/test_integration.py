@@ -473,3 +473,32 @@ def test_match_my_likes(client):
 
     # /my-likes 가 /{match_id} 로 잘못 매칭되지 않는다
     assert security.pseudonymize("u-1") != "u-1"
+
+
+def test_match_likers(client):
+    mid = _make_match(client)
+
+    # users 에 등록된 사람은 닉네임으로, name_alias 가 있으면 실명으로 뜬다
+    assert client.post("/api/underduck/users", headers=H, json={
+        "kakao_id": "u-1", "nickname": "재준",
+        "profile_image": "https://example.com/a.png"}).status_code == 200
+    assert client.put("/api/underduck/name-alias", headers=H, json={
+        "kakao_name": "재준", "real_name": "임재준"}).status_code == 200
+
+    client.post(f"/api/underduck/matches/{mid}/like", headers=H, json={"kakao_id": "u-1"})
+    r = client.get(f"/api/underduck/matches/{mid}/likers", headers=H)
+    assert r.status_code == 200 and r.json() == ["임재준"]
+
+    # 이름을 못 찾아도 자리를 남긴다 — 목록 길이가 like_count 와 어긋나면 안 된다
+    client.post(f"/api/underduck/matches/{mid}/like", headers=H, json={"kakao_id": "ghost"})
+    names = client.get(f"/api/underduck/matches/{mid}/likers", headers=H).json()
+    count = client.get(f"/api/underduck/matches/{mid}", headers=H).json()["like_count"]
+    assert len(names) == count == 2
+    assert names == ["임재준", "알 수 없음"]
+
+    # 좋아요를 취소하면 목록에서도 빠진다
+    client.post(f"/api/underduck/matches/{mid}/like", headers=H, json={"kakao_id": "ghost"})
+    assert client.get(f"/api/underduck/matches/{mid}/likers", headers=H).json() == ["임재준"]
+
+    # 없는 경기는 404
+    assert client.get("/api/underduck/matches/9999/likers", headers=H).status_code == 404
