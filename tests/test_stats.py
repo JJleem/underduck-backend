@@ -44,6 +44,8 @@ def client():
         # 야유회: 경기가 아니라 행사다. goals 칸에 선수 대신 종목이 적힌다.
         models.Match(match_id=3, type="야유회", goals="바베큐,족구",
                      attendees="홍길동,김철수,박영희"),
+        # 예정 경기: 출석 투표로 명단이 미리 차 있다. 아직 뛴 게 아니다.
+        models.Match(match_id=4, result="예정", attendees="홍길동,김철수,박영희"),
     ])
     db.commit()
 
@@ -96,4 +98,16 @@ def test_outing_excluded(client):
     by = {r["name"]: r for r in rows}
     # 홍길동은 0·1번 경기에만 출전. 야유회(3번)가 세지면 3이 된다.
     assert by["홍길동"]["apps"] == 2
+    assert by["박영희"]["apps"] == 1
+
+
+def test_upcoming_not_counted(client):
+    """예정 경기는 명단이 차 있어도 출전 수에 넣지 않는다.
+
+    출석 투표나 사전 입력으로 명단이 먼저 채워지기 때문에, 그대로 세면
+    경기가 열리기도 전에 기록이 올라간다.
+    """
+    rows = client.get("/api/underduck/stats", headers=HEADERS).json()
+    by = {r["name"]: r for r in rows}
+    assert by["홍길동"]["apps"] == 2   # 0·1번만. 3(야유회)·4(예정) 제외
     assert by["박영희"]["apps"] == 1

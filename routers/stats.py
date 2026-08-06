@@ -69,6 +69,11 @@ def list_stats(db: Session = Depends(get_db)):
         # 자체전·풋살은 빼지 않는다 — 그건 실제로 공을 찬 경기다.
         if _is_outing(m.type):
             continue
+        # 아직 안 치른 경기. 출석 투표나 관리자 사전 입력으로 명단이 미리 차 있어서
+        # 그대로 세면 경기 전에 출전 수가 올라간다(8/8 자체전 명단 12명이 실제로
+        # +1 씩 잡혀 있었다). 기록은 경기가 끝난 뒤에 생겨야 한다.
+        if (m.result or "").strip() == "예정":
+            continue
         for name in _names(m.goals):
             goals[name] += 1
         for name in _names(m.assists):
