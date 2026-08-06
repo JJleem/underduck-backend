@@ -41,6 +41,9 @@ def client():
         models.Match(match_id=1, goals="김철수", assists="김철수",
                      attendees="홍길동,김철수", mom="홍길동,김철수 / 박영희"),
         models.Match(match_id=2, goals="게스트", attendees="게스트"),  # roster 밖
+        # 야유회: 경기가 아니라 행사다. goals 칸에 선수 대신 종목이 적힌다.
+        models.Match(match_id=3, type="야유회", goals="바베큐,족구",
+                     attendees="홍길동,김철수,박영희"),
     ])
     db.commit()
 
@@ -77,3 +80,20 @@ def test_stats_aggregation(client):
     assert by["홍길동"]["no"] == "7" and by["홍길동"]["pos"] == "FW"
     # roster 밖 게스트도 누락되지 않고 no/pos는 비어있음
     assert by["게스트"]["goals"] == 1 and by["게스트"]["no"] is None
+
+
+def test_outing_excluded(client):
+    """야유회는 출전 수에도, 득점자에도 들어가지 않는다.
+
+    goals 칸에 "바베큐,족구" 처럼 종목이 적혀 있어서 그대로 세면 그 종목들이
+    1골짜리 선수로 순위에 올라온다. 실제 운영 데이터에서 다섯 개가 올라와 있었다.
+    """
+    rows = client.get("/api/underduck/stats", headers=HEADERS).json()
+    names = {r["name"] for r in rows}
+    assert "바베큐" not in names
+    assert "족구" not in names
+
+    by = {r["name"]: r for r in rows}
+    # 홍길동은 0·1번 경기에만 출전. 야유회(3번)가 세지면 3이 된다.
+    assert by["홍길동"]["apps"] == 2
+    assert by["박영희"]["apps"] == 1

@@ -26,6 +26,11 @@ router = APIRouter(
 )
 
 
+def _is_outing(match_type: str | None) -> bool:
+    """야유회인가. 공백 표기가 섞여 있어 지우고 비교한다."""
+    return (match_type or "").replace(" ", "") == "야유회"
+
+
 def _names(csv: str | None) -> list[str]:
     """쉼표로 이어붙인 명단 → 공백/빈 슬롯 제거한 이름 리스트."""
     if not csv:
@@ -58,6 +63,12 @@ def list_stats(db: Session = Depends(get_db)):
 
     # ── matches: 골/도움/출전 집계 ──
     for m in db.scalars(select(Match)):
+        # 야유회는 경기가 아니라 행사다. 출전 수에 들어가면 안 되고, goals 칸에
+        # 선수 이름 대신 종목이 적혀 있다("바베큐, 닭싸움, 족구, 피구, 실내").
+        # 그래서 그대로 세면 그 다섯이 1골짜리 선수로 순위에 올라온다(실제로 올라와 있었다).
+        # 자체전·풋살은 빼지 않는다 — 그건 실제로 공을 찬 경기다.
+        if _is_outing(m.type):
+            continue
         for name in _names(m.goals):
             goals[name] += 1
         for name in _names(m.assists):
