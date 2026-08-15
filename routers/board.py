@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import BoardComment, BoardLike, BoardPost, User
-from deps import Caller, assert_owner_or_admin, caller, effective_kakao_id, require_underduck
+from deps import Caller, assert_owner_or_admin, caller, effective_kakao_id, require_admin, require_underduck
 from naming import resolve_name
 from security import pseudonymize
 
@@ -115,6 +115,20 @@ def increase_view(post_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="post not found")
     db.commit()
     return {"view_count": row[0]}
+
+
+@router.post("/{post_id}/pin", response_model=schemas.BoardPinOut)
+def toggle_pin(
+    post_id: int,
+    _admin: Caller = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    p = db.get(BoardPost, post_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="post not found")
+    p.pinned = not p.pinned
+    db.commit()
+    return {"pinned": p.pinned}
 
 
 @router.post("/{post_id}/like", response_model=schemas.BoardLikeOut)

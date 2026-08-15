@@ -378,6 +378,7 @@ class BoardPostOut(BaseModel):
     comment_count: int = 0
     like_count: int = 0
     view_count: int = 0
+    pinned: bool = False
 
 
 class BoardPostCreate(BaseModel):
@@ -402,6 +403,10 @@ class BoardLikeToggle(BaseModel):
 class BoardLikeOut(BaseModel):
     liked: bool
     like_count: int
+
+
+class BoardPinOut(BaseModel):
+    pinned: bool
 
 
 class BoardLikeGiverOut(BaseModel):

@@ -180,6 +180,7 @@ class BoardPost(Base):
     )
     # 전술 글: {formation, positions, players, instructions, tactic}. 유튜브 글은 NULL.
     lineup: Mapped[dict | None] = mapped_column(JSON)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
 
 
 class BoardComment(Base):
