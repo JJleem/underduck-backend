@@ -50,6 +50,15 @@ jobs:
             cd ~/underduck-backend
             test -d .venv || python3 -m venv .venv
             .venv/bin/pip install -r requirements.txt -q
+            # scp rm:false로 인해 리네임/삭제된 마이그레이션이 서버에 남을 수 있으므로
+            # 리포에 없는 .py 파일을 alembic/versions에서 정리한다.
+            for f in alembic/versions/*.py; do
+              bn=$(basename "$f")
+              if ! git ls-files --error-unmatch "alembic/versions/$bn" >/dev/null 2>&1; then
+                echo "Removing stale migration: $bn"
+                rm -f "$f"
+              fi
+            done
             .venv/bin/alembic upgrade head
             sudo systemctl restart underduck-backend
             echo "underduck-backend 재시작 완료"
