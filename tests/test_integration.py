@@ -159,6 +159,25 @@ def test_member_can_update_only_own_featured(client):
     }]
 
 
+def test_member_can_delete_only_own_feedback(client):
+    for kakao_id, nickname in (("member-1", "홍길동"), ("member-2", "김철수")):
+        assert client.post("/api/underduck/users", headers=H, json={
+            "kakao_id": kakao_id, "nickname": nickname, "profile_image": "",
+        }).status_code in (200, 201)
+    mine = client.post("/api/underduck/feedback", headers={
+        **H, "X-Underduck-User": "member-1", "X-Underduck-Role": "member",
+    }, json={"match_id": 1, "name": "홍길동", "message": "내 댓글"}).json()
+
+    other = {**H, "X-Underduck-User": "member-2", "X-Underduck-Role": "member"}
+    assert client.delete(
+        f"/api/underduck/feedback/{mine['id']}", headers=other,
+    ).status_code == 403
+    owner = {**H, "X-Underduck-User": "member-1", "X-Underduck-Role": "member"}
+    assert client.delete(
+        f"/api/underduck/feedback/{mine['id']}", headers=owner,
+    ).status_code == 200
+
+
 def test_push(client):
     client.post("/api/underduck/push", headers=H, json={
         "endpoint": "https://e1", "p256dh": "p", "auth": "a"})

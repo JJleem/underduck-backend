@@ -6,7 +6,7 @@ import schemas
 from db.connection import get_db
 from db.models import Roster
 from deps import Caller, caller, require_admin, require_underduck
-from naming import effective_name, resolve_name
+from naming import owned_name, resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/roster",
@@ -29,7 +29,7 @@ def update_pref_pos(
     # 본인 이름(실명 정규화)으로 로스터 행을 찾아 선호 포지션만 갱신.
     # 신원 헤더가 오면 세션 사용자의 실명으로 강제 → 남의 선호 포지션 변경 차단.
     # (경로 파라미터 /{roster_id} 보다 먼저 선언해야 매칭 충돌이 없다.)
-    name = effective_name(c, db, resolve_name(db, body.name.strip()))
+    name = owned_name(c, db, resolve_name(db, body.name.strip()))
     r = db.scalars(select(Roster).where(Roster.name == name)).first()
     if r is None:
         raise HTTPException(status_code=404, detail="roster not found for name")

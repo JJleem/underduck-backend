@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 import schemas
 from db.connection import get_db
 from db.models import Feedback
-from deps import Caller, caller, require_admin, require_underduck
-from naming import effective_name, resolve_name
+from deps import Caller, caller, require_underduck
+from naming import effective_name, owned_name, resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/feedback",
@@ -43,11 +43,18 @@ def create_feedback(
     return f
 
 
-@router.delete("/{feedback_id}", dependencies=[Depends(require_admin)])
-def delete_feedback(feedback_id: int, db: Session = Depends(get_db)):
+@router.delete("/{feedback_id}")
+def delete_feedback(
+    feedback_id: int,
+    c: Caller = Depends(caller),
+    db: Session = Depends(get_db),
+):
     f = db.get(Feedback, feedback_id)
     if f is None:
         raise HTTPException(status_code=404, detail="feedback not found")
+    owner = owned_name(c, db, resolve_name(db, (f.name or "").strip()))
+    if c.is_identified and not c.is_admin and owner != resolve_name(db, (f.name or "").strip()):
+        raise HTTPException(status_code=403, detail="Forbidden: not the author")
     db.delete(f)
     db.commit()
     return {"deleted": 1}

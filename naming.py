@@ -3,6 +3,7 @@
 쓰는 곳: mom_vote / vote_comment / attendance / feedback 의 이름 저장 시점에
 닉네임을 실명으로 정규화해, 로스터·스탯(실명 기준) 페이지와 연결되도록 한다.
 """
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from db.models import NameAlias, User
@@ -37,3 +38,17 @@ def effective_name(c: Caller, db: Session, claimed: str) -> str:
     if not c.is_identified or c.is_admin:
         return claimed
     return caller_real_name(db, c.kakao_id) or claimed
+
+
+def owned_name(c: Caller, db: Session, claimed: str) -> str:
+    """본인 전용 이름 기반 쓰기의 실제 대상 이름.
+
+    관리자·레거시 호출은 요청 이름을 유지한다. 일반 회원은 users에서 확인한 실명만
+    사용하며, 신원 매핑이 없으면 요청 이름으로 폴백하지 않고 거부한다.
+    """
+    if not c.is_identified or c.is_admin:
+        return claimed
+    name = caller_real_name(db, c.kakao_id)
+    if not name:
+        raise HTTPException(status_code=403, detail="Forbidden: user name not found")
+    return name

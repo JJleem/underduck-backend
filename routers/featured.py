@@ -6,7 +6,7 @@ import schemas
 from db.connection import get_db
 from db.models import Featured
 from deps import Caller, caller, require_underduck
-from naming import effective_name, resolve_name
+from naming import owned_name, resolve_name
 
 router = APIRouter(
     prefix="/api/underduck/featured",
@@ -28,7 +28,7 @@ def upsert_featured(
 ):
     # 일반 회원은 세션 사용자 실명으로 강제해 남의 대표 칭호 변경을 막는다.
     # 관리자는 기존처럼 요청한 선수의 칭호를 변경할 수 있다.
-    name = effective_name(c, db, resolve_name(db, body.player_name.strip()))
+    name = owned_name(c, db, resolve_name(db, body.player_name.strip()))
     ids = (body.title_ids + ["", "", ""])[:3]
     row = db.get(Featured, name)
     if row is None:
