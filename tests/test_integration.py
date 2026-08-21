@@ -133,6 +133,32 @@ def test_featured(client):
     assert len(rows) == 1 and rows[0]["title_id1"] == "x"
 
 
+def test_member_can_update_only_own_featured(client):
+    # users에는 pid로 저장되고, 요청 헤더는 원본 ID여도 같은 pid로 해석된다.
+    assert client.post("/api/underduck/users", headers=H, json={
+        "kakao_id": "member-1", "nickname": "홍길동", "profile_image": "",
+    }).status_code in (200, 201)
+    member = {
+        **H,
+        "X-Underduck-User": "member-1",
+        "X-Underduck-Role": "member",
+    }
+
+    # 본문에 남의 이름을 넣더라도 세션 사용자의 이름으로 저장된다.
+    r = client.put("/api/underduck/featured", headers=member, json={
+        "player_name": "다른사람", "title_ids": ["mine"],
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["player_name"] == "홍길동"
+    rows = client.get("/api/underduck/featured", headers=H).json()
+    assert rows == [{
+        "player_name": "홍길동",
+        "title_id1": "mine",
+        "title_id2": None,
+        "title_id3": None,
+    }]
+
+
 def test_push(client):
     client.post("/api/underduck/push", headers=H, json={
         "endpoint": "https://e1", "p256dh": "p", "auth": "a"})
