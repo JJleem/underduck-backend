@@ -219,3 +219,24 @@ class MatchLike(Base):
     match_id: Mapped[int | None] = mapped_column(Integer, index=True)
     kakao_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class GalleryLike(Base):
+    __tablename__ = "gallery_like"
+    __table_args__ = (UniqueConstraint("artwork_id", "kakao_id", name="uq_gallery_like_art_user"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    artwork_id: Mapped[str] = mapped_column(String(100), index=True)
+    kakao_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class GalleryComment(Base):
+    __tablename__ = "gallery_comment"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    artwork_id: Mapped[str] = mapped_column(String(100), index=True)
+    kakao_id: Mapped[str] = mapped_column(String(64))
+    author: Mapped[str] = mapped_column(String(100))
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))

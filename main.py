@@ -11,6 +11,7 @@ from routers import (
     board,
     featured,
     feedback,
+    gallery,
     health,
     lineup,
     matches,
@@ -50,6 +51,7 @@ app.include_router(stats.router)
 app.include_router(notice.router)
 app.include_router(lineup.router)
 app.include_router(feedback.router)
+app.include_router(gallery.router)
 app.include_router(users.router)
 app.include_router(media.router)
 app.include_router(name_alias.router)

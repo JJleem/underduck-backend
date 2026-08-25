@@ -429,3 +429,35 @@ class BoardCommentCreate(BaseModel):
     kakao_id: KakaoId
     author: Name
     message: Body
+
+
+class GalleryStateRequest(BaseModel):
+    kakao_id: KakaoId
+
+
+class GalleryStateOut(BaseModel):
+    artwork_id: str
+    liked: bool = False
+    like_count: int = 0
+    comment_count: int = 0
+
+
+class GalleryLikeOut(BaseModel):
+    liked: bool
+    like_count: int
+
+
+class GalleryCommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    artwork_id: str
+    kakao_id: str
+    author: str
+    message: str
+    created_at: datetime | None = None
+
+
+class GalleryCommentCreate(BaseModel):
+    kakao_id: KakaoId
+    author: Name
+    message: Body
