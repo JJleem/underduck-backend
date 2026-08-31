@@ -550,6 +550,35 @@ def test_match_likers(client):
     assert client.get("/api/underduck/matches/9999/likers", headers=H).status_code == 404
 
 
+
+def test_feedback_and_vote_comment_emoticon(client):
+    """경기 댓글·투표 댓글도 사랑방과 같은 이모티콘 체계를 쓴다."""
+    mid = _make_match(client)
+
+    # 글 없이 이모티콘만 달아도 댓글이 된다.
+    r = client.post("/api/underduck/feedback", headers=H, json={
+        "match_id": mid, "name": "홍길동", "emoticon": "goal"})
+    assert r.status_code == 201 and r.json()["emoticon"] == "goal"
+    assert client.get("/api/underduck/feedback", headers=H).json()[0]["emoticon"] == "goal"
+
+    v = client.post("/api/underduck/vote-comment", headers=H, json={
+        "match_id": mid, "kakao_id": "k1", "nickname": "홍길동", "emoticon": "tired"})
+    assert v.status_code == 201 and v.json()["emoticon"] == "tired"
+    assert client.get("/api/underduck/vote-comment", headers=H).json()[0]["emoticon"] == "tired"
+
+    # 둘 다 비면 막는다.
+    for path, body in (
+        ("/api/underduck/feedback", {"match_id": mid, "name": "홍길동", "message": "  "}),
+        ("/api/underduck/vote-comment",
+         {"match_id": mid, "kakao_id": "k1", "nickname": "홍길동", "message": "  "}),
+    ):
+        assert client.post(path, headers=H, json=body).status_code == 400, path
+
+    # 사랑방과 같은 id 규칙 — 경로 주입은 막는다.
+    assert client.post("/api/underduck/feedback", headers=H, json={
+        "match_id": mid, "name": "홍길동", "emoticon": "../hack.png"}).status_code == 422
+
+
 # ── lounge (사랑방) ──
 # 이 게시판의 핵심은 익명화다. "실명이 응답에 안 실린다"를 테스트로 못 박아 둔다 —
 # 여기가 깨지면 기능이 아니라 약속이 깨지는 것이다.

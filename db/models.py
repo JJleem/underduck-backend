@@ -27,6 +27,9 @@ class VoteComment(Base):
     kakao_id: Mapped[str | None] = mapped_column(String(64))
     nickname: Mapped[str | None] = mapped_column(String(100))
     message: Mapped[str | None] = mapped_column(Text)
+    # 이모티콘 id. 사랑방(lounge_comment.emoticon)과 같은 체계를 쓴다 — 그림을
+    # 두 벌 관리하지 않기 위해서다. 프론트가 id로 찾아 그리고 모르는 id는 무시한다.
+    emoticon: Mapped[str | None] = mapped_column(String(50))
     timestamp: Mapped[object | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -132,6 +135,8 @@ class Feedback(Base):
     timestamp: Mapped[object | None] = mapped_column(DateTime(timezone=True))
     name: Mapped[str | None] = mapped_column(String(100))
     message: Mapped[str | None] = mapped_column(Text)
+    # 이모티콘 id — vote_comment 와 같은 설명. 사랑방과 한 벌을 같이 쓴다.
+    emoticon: Mapped[str | None] = mapped_column(String(50))
 
 
 class User(Base):

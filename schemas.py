@@ -18,6 +18,9 @@ Name = Annotated[str, Field(max_length=100)]
 Title = Annotated[str, Field(max_length=200)]
 Body = Annotated[str, Field(max_length=10_000)]      # 사용자 작성 본문/댓글
 Csv = Annotated[str, Field(max_length=20_000)]       # 명단 CSV (goals/assists/attendees)
+# 이모티콘 id. 그림 파일 이름이자 프론트 레지스트리 키다.
+# 사랑방·경기 댓글·투표 댓글이 한 벌을 같이 쓴다.
+EmoticonId = Annotated[str, Field(max_length=50, pattern=r"^[a-z0-9-]+$")]
 # URL: 길이 상한 + 실행 가능한 스킴(javascript:, data: …) 차단 → 저장형 XSS 방지
 Url = Annotated[str, Field(max_length=1_000), AfterValidator(validate_url)]
 # 라인업 자유 배치 좌표: 필드 기준 x, y 백분율 한 쌍
@@ -124,6 +127,7 @@ class VoteCommentOut(BaseModel):
     kakao_id: str | None = None
     nickname: str | None = None
     message: str | None = None
+    emoticon: str | None = None
     timestamp: datetime | None = None
 
 
@@ -131,7 +135,9 @@ class VoteCommentCreate(BaseModel):
     match_id: int
     kakao_id: KakaoId
     nickname: Name
-    message: Body
+    # 이모티콘만 달아도 댓글이다 — 둘 다 비면 라우터가 막는다.
+    message: Body | None = None
+    emoticon: EmoticonId | None = None
 
 
 # ── attendance_vote ──
@@ -283,12 +289,14 @@ class FeedbackOut(BaseModel):
     timestamp: datetime | None = None
     name: str | None = None
     message: str | None = None
+    emoticon: str | None = None
 
 
 class FeedbackCreate(BaseModel):
     match_id: int
     name: Name
-    message: Body
+    message: Body | None = None
+    emoticon: EmoticonId | None = None
 
 
 # ── users ──
@@ -469,8 +477,6 @@ class GalleryCommentCreate(BaseModel):
 # 실수로 실명이 새려면 명시적으로 한 줄을 써야 하도록.
 LoungeCategory = Literal["suggestion", "chat"]
 LoungeStatus = Literal["received", "reviewing", "resolved", "declined"]
-# 이모티콘 id. 그림 파일 이름이자 프론트 레지스트리 키다.
-EmoticonId = Annotated[str, Field(max_length=50, pattern=r"^[a-z0-9-]+$")]
 
 
 class LoungeCommentOut(BaseModel):

@@ -31,11 +31,16 @@ def create_comment(
     caller_: Caller = Depends(caller),
     db: Session = Depends(get_db),
 ):
+    # 이모티콘만 달아도 댓글이다. 둘 다 비면 막는다.
+    message = (body.message or "").strip()
+    if not message and not body.emoticon:
+        raise HTTPException(status_code=400, detail="댓글 내용이나 이모티콘이 필요합니다.")
     c = VoteComment(
         match_id=body.match_id,
         kakao_id=effective_kakao_id(caller_, body.kakao_id),
         nickname=resolve_name(db, body.nickname.strip()),
-        message=body.message.strip(),
+        message=message,
+        emoticon=body.emoticon,
         timestamp=datetime.now(timezone.utc),
     )
     db.add(c)
