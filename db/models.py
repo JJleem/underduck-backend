@@ -267,6 +267,22 @@ class LoungePost(Base):
     updated_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
 
 
+class LoungeLike(Base):
+    """사랑방 글 좋아요. 인당 1번(post_id+kakao_id 유니크).
+
+    kakao_id 를 두는 건 **중복을 막기 위해서지 누가 눌렀는지 보여주려는 게 아니다.**
+    board_like 와 달리 "누가 눌렀나"를 돌려주는 엔드포인트를 만들지 않는다 —
+    익명 게시판에서 공감한 사람 명단은 그 자체로 익명성을 깎는다.
+    """
+    __tablename__ = "lounge_like"
+    __table_args__ = (UniqueConstraint("post_id", "kakao_id", name="uq_lounge_like_post_user"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(Integer, index=True)
+    kakao_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
 class LoungeComment(Base):
     """사랑방 댓글. 글·이모티콘 중 하나 이상이 있어야 한다(라우터가 검사)."""
     __tablename__ = "lounge_comment"

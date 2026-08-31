@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 import schemas
 from db.connection import get_db
-from db.models import LoungeComment, LoungePost
+from db.models import LoungeComment, LoungeLike, LoungePost
 from deps import Caller, assert_owner_or_admin, caller, require_admin, require_underduck
 from naming import caller_real_name
 
@@ -98,6 +98,8 @@ def _post_out(
     *,
     label: str,
     comment_count: int,
+    like_count: int,
+    liked_by_me: bool,
     with_body: bool,
     comments: list[schemas.LoungeCommentOut] | None = None,
 ) -> schemas.LoungePostOut:
@@ -113,6 +115,8 @@ def _post_out(
         author=p.author if c.is_admin else None,
         mine=bool(c.kakao_id) and c.kakao_id == p.kakao_id,
         comment_count=comment_count,
+        like_count=like_count,
+        liked_by_me=liked_by_me,
         admin_reply=p.admin_reply,
         admin_reply_author=p.admin_reply_author,
         admin_reply_at=p.admin_reply_at,
@@ -135,13 +139,40 @@ def list_posts(c: Caller = Depends(caller), db: Session = Depends(get_db)):
             )
         ).all()
     )
+    likes = dict(
+        db.execute(
+            select(LoungeLike.post_id, func.count(LoungeLike.id)).group_by(LoungeLike.post_id)
+        ).all()
+    )
+    # 글마다 따로 묻지 않고 내가 누른 것만 한 번에 받아 온다.
+    mine_liked = (
+        set(db.scalars(select(LoungeLike.post_id).where(LoungeLike.kakao_id == c.kakao_id)).all())
+        if c.kakao_id
+        else set()
+    )
     posts = db.scalars(select(LoungePost).order_by(LoungePost.id.desc())).all()
     return [
         _post_out(
-            p, c, label=POST_LABEL, comment_count=counts.get(p.id, 0), with_body=False
+            p,
+            c,
+            label=POST_LABEL,
+            comment_count=counts.get(p.id, 0),
+            like_count=likes.get(p.id, 0),
+            liked_by_me=p.id in mine_liked,
+            with_body=False,
         )
         for p in posts
     ]
+
+
+def _like_state(db: Session, post_id: int, kakao_id: str | None) -> tuple[int, bool]:
+    count = db.scalar(select(func.count(LoungeLike.id)).where(LoungeLike.post_id == post_id))
+    liked = bool(kakao_id) and db.scalar(
+        select(func.count(LoungeLike.id)).where(
+            LoungeLike.post_id == post_id, LoungeLike.kakao_id == kakao_id
+        )
+    ) > 0
+    return count or 0, liked
 
 
 @router.get("/{post_id}", response_model=schemas.LoungePostOut)
@@ -156,6 +187,7 @@ def get_post(post_id: int, c: Caller = Depends(caller), db: Session = Depends(ge
         .order_by(LoungeComment.id)
     ).all()
     labels = _labels(p, rows)
+    like_count, liked = _like_state(db, post_id, c.kakao_id)
 
     comments = [
         schemas.LoungeCommentOut(
@@ -175,6 +207,8 @@ def get_post(post_id: int, c: Caller = Depends(caller), db: Session = Depends(ge
         c,
         label=POST_LABEL,
         comment_count=len(rows),
+        like_count=like_count,
+        liked_by_me=liked,
         with_body=True,
         comments=comments,
     )
@@ -214,7 +248,7 @@ def create_post(
     db.add(p)
     db.commit()
     db.refresh(p)
-    return _post_out(p, c, label=POST_LABEL, comment_count=0, with_body=True)
+    return _post_out(p, c, label=POST_LABEL, comment_count=0, like_count=0, liked_by_me=False, with_body=True)
 
 
 @router.patch("/{post_id}", response_model=schemas.LoungePostOut)
@@ -250,7 +284,11 @@ def update_post(
     count = db.scalar(
         select(func.count(LoungeComment.id)).where(LoungeComment.post_id == post_id)
     )
-    return _post_out(p, admin, label=POST_LABEL, comment_count=count or 0, with_body=True)
+    like_count, liked = _like_state(db, post_id, admin.kakao_id)
+    return _post_out(
+        p, admin, label=POST_LABEL, comment_count=count or 0,
+        like_count=like_count, liked_by_me=liked, with_body=True,
+    )
 
 
 @router.delete("/{post_id}")
@@ -260,9 +298,42 @@ def delete_post(post_id: int, c: Caller = Depends(caller), db: Session = Depends
         raise HTTPException(status_code=404, detail="post not found")
     assert_owner_or_admin(c, p.kakao_id)
     db.query(LoungeComment).filter(LoungeComment.post_id == post_id).delete()
+    db.query(LoungeLike).filter(LoungeLike.post_id == post_id).delete()
     db.delete(p)
     db.commit()
     return {"deleted": 1}
+
+
+@router.post("/{post_id}/like", response_model=schemas.LoungeLikeOut)
+def toggle_like(post_id: int, c: Caller = Depends(caller), db: Session = Depends(get_db)):
+    """좋아요 토글. 돌려주는 건 **숫자와 내 상태뿐**이다.
+
+    누가 눌렀는지는 어디로도 나가지 않는다. kakao_id 를 저장하는 건 한 사람이
+    여러 번 눌러 숫자를 부풀리지 못하게 하려는 것뿐이다.
+    """
+    if not c.kakao_id:
+        raise HTTPException(status_code=401, detail="identity required")
+    if db.get(LoungePost, post_id) is None:
+        raise HTTPException(status_code=404, detail="post not found")
+
+    existing = db.scalars(
+        select(LoungeLike).where(
+            LoungeLike.post_id == post_id, LoungeLike.kakao_id == c.kakao_id
+        )
+    ).first()
+    if existing:
+        db.delete(existing)
+    else:
+        db.add(
+            LoungeLike(
+                post_id=post_id,
+                kakao_id=c.kakao_id,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+    db.commit()
+    count, liked = _like_state(db, post_id, c.kakao_id)
+    return {"liked": liked, "like_count": count}
 
 
 # ── comments ──

@@ -495,6 +495,8 @@ class LoungePostOut(BaseModel):
     author: str | None = None
     mine: bool = False
     comment_count: int = 0
+    like_count: int = 0
+    liked_by_me: bool = False
     admin_reply: str | None = None
     admin_reply_author: str | None = None
     admin_reply_at: datetime | None = None
@@ -514,6 +516,11 @@ class LoungePostPatch(BaseModel):
     """운영진 전용. 둘 다 없으면 라우터가 400."""
     status: LoungeStatus | None = None
     admin_reply: Body | None = None
+
+
+class LoungeLikeOut(BaseModel):
+    liked: bool
+    like_count: int
 
 
 class LoungeCommentCreate(BaseModel):

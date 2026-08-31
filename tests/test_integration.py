@@ -657,6 +657,44 @@ def test_lounge_comment_replies(client):
     assert client.get(f"/api/underduck/lounge/{pid}", headers=author).json()["comments"] == []
 
 
+def test_lounge_likes_count_only(client):
+    author = _lounge_member(client, "lounge-1", "홍길동")
+    bob = _lounge_member(client, "lounge-2", "김철수")
+    pid = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "suggestion", "title": "주차", "body": "자리가 없어요"}).json()["id"]
+
+    r = client.post(f"/api/underduck/lounge/{pid}/like", headers=bob).json()
+    assert r == {"liked": True, "like_count": 1}
+    # 같은 사람이 또 눌러도 숫자가 부풀지 않는다 — 토글로 빠진다.
+    assert client.post(f"/api/underduck/lounge/{pid}/like", headers=bob).json() == {
+        "liked": False, "like_count": 0}
+
+    client.post(f"/api/underduck/lounge/{pid}/like", headers=bob)
+    client.post(f"/api/underduck/lounge/{pid}/like", headers=author)
+    detail = client.get(f"/api/underduck/lounge/{pid}", headers=author).json()
+    assert detail["like_count"] == 2 and detail["liked_by_me"] is True
+    # 남이 보면 liked_by_me 만 다르고 숫자는 같다.
+    third = _lounge_member(client, "lounge-3", "박영희")
+    assert client.get(f"/api/underduck/lounge/{pid}", headers=third).json() == {
+        **detail, "liked_by_me": False, "mine": False}
+
+    # 목록에도 실려 나온다.
+    row = client.get("/api/underduck/lounge", headers=bob).json()[0]
+    assert row["like_count"] == 2 and row["liked_by_me"] is True
+
+    # **누가 눌렀는지 돌려주는 엔드포인트는 없다.** (board 에는 둘 다 있다)
+    # 없는 경로라 404, 또는 /{post_id} 에 걸려 422 — 어느 쪽이든 명단은 나가지 않는다.
+    for path in (f"/api/underduck/lounge/{pid}/likers", "/api/underduck/lounge/like-givers"):
+        assert client.get(path, headers=author).status_code != 200, path
+
+    # 신원 없이는 못 누른다.
+    assert client.post(f"/api/underduck/lounge/{pid}/like", headers=H).status_code == 401
+
+    # 글을 지우면 좋아요도 같이 사라진다.
+    client.delete(f"/api/underduck/lounge/{pid}", headers=author)
+    assert client.get(f"/api/underduck/lounge/{pid}", headers=author).status_code == 404
+
+
 def test_lounge_post_icon(client):
     author = _lounge_member(client, "lounge-1", "홍길동")
     # 아이콘은 선택 — 없어도 글이 써진다.
