@@ -240,3 +240,41 @@ class GalleryComment(Base):
     author: Mapped[str] = mapped_column(String(100))
     message: Mapped[str] = mapped_column(Text)
     created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class LoungePost(Base):
+    """사랑방 글 — 애로사항·건의(suggestion)와 잡담(chat).
+
+    **화면엔 익명, DB엔 실명.** author 는 저장은 하되 운영진 요청에만 응답에 실린다
+    (마스킹은 routers/lounge.py 가 한다). 프론트에서 가리면 개발자 도구로 다 보인다.
+    """
+    __tablename__ = "lounge_post"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kakao_id: Mapped[str] = mapped_column(String(64), index=True)  # 작성자 신원(소유권·라벨용)
+    author: Mapped[str] = mapped_column(String(100))               # 실명 — 운영진에게만 노출
+    category: Mapped[str] = mapped_column(String(20))              # suggestion | chat
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    # 처리 상태. chat 글에는 의미가 없다(화면도 건의에만 뱃지를 그린다).
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="received", default="received")
+    admin_reply: Mapped[str | None] = mapped_column(Text)
+    admin_reply_author: Mapped[str | None] = mapped_column(String(100))  # 답변자는 공개해도 된다
+    admin_reply_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
+
+
+class LoungeComment(Base):
+    """사랑방 댓글. 글·이모티콘 중 하나 이상이 있어야 한다(라우터가 검사)."""
+    __tablename__ = "lounge_comment"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(Integer, index=True)
+    kakao_id: Mapped[str] = mapped_column(String(64))
+    author: Mapped[str] = mapped_column(String(100))  # 실명 — 운영진에게만 노출
+    message: Mapped[str | None] = mapped_column(Text)
+    # 이모티콘 **id** 만 저장한다(URL 아님). 그림은 프론트가 id로 찾아 그리고,
+    # 모르는 id는 무시한다 → 백엔드를 건드리지 않고 이모티콘을 늘릴 수 있다.
+    emoticon: Mapped[str | None] = mapped_column(String(50))
+    created_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))

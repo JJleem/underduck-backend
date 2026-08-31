@@ -14,6 +14,7 @@ from routers import (
     gallery,
     health,
     lineup,
+    lounge,
     matches,
     media,
     mom_vote,
@@ -56,3 +57,4 @@ app.include_router(users.router)
 app.include_router(media.router)
 app.include_router(name_alias.router)
 app.include_router(board.router)
+app.include_router(lounge.router)

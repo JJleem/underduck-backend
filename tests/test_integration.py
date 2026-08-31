@@ -547,3 +547,124 @@ def test_match_likers(client):
 
     # 없는 경기는 404
     assert client.get("/api/underduck/matches/9999/likers", headers=H).status_code == 404
+
+
+# ── lounge (사랑방) ──
+# 이 게시판의 핵심은 익명화다. "실명이 응답에 안 실린다"를 테스트로 못 박아 둔다 —
+# 여기가 깨지면 기능이 아니라 약속이 깨지는 것이다.
+def _lounge_member(client, kakao_id: str, nickname: str) -> dict:
+    client.post("/api/underduck/users", headers=H, json={
+        "kakao_id": kakao_id, "nickname": nickname, "profile_image": ""})
+    return {**H, "X-Underduck-User": kakao_id, "X-Underduck-Role": "member"}
+
+
+def test_lounge_hides_real_names_from_members(client):
+    author = _lounge_member(client, "lounge-1", "홍길동")
+    r = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "suggestion", "title": "회비 납부일", "body": "월초로 옮겨요"})
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+
+    # 회원에게는 실명도 kakao_id 도 나가지 않는다.
+    detail = client.get(f"/api/underduck/lounge/{pid}", headers=author).json()
+    assert detail["author"] is None
+    assert "kakao_id" not in detail
+    assert detail["author_label"] == "글쓴이"
+    assert detail["mine"] is True
+
+    # 목록은 본문 없이, 작성자는 전부 "익명".
+    row = client.get("/api/underduck/lounge", headers=author).json()[0]
+    assert row["author_label"] == "익명" and row["author"] is None and row["body"] is None
+
+    # 운영진에게만 실명이 보인다.
+    admin = {**H, "X-Underduck-User": "lounge-admin", "X-Underduck-Role": "admin"}
+    assert client.get(f"/api/underduck/lounge/{pid}", headers=admin).json()["author"] == "홍길동"
+
+    # 남이 보면 mine 은 False.
+    other = _lounge_member(client, "lounge-2", "김철수")
+    assert client.get(f"/api/underduck/lounge/{pid}", headers=other).json()["mine"] is False
+
+
+def test_lounge_comment_labels_are_per_post(client):
+    author = _lounge_member(client, "lounge-1", "홍길동")
+    bob = _lounge_member(client, "lounge-2", "김철수")
+    cat = _lounge_member(client, "lounge-3", "박영희")
+    pid = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "chat", "title": "축구화", "body": "추천 좀"}).json()["id"]
+
+    for who, msg in [(bob, "TF 신으세요"), (cat, "저는 HG"), (bob, "그것도 좋죠"), (author, "감사합니다")]:
+        assert client.post(f"/api/underduck/lounge/{pid}/comments", headers=who,
+                           json={"message": msg}).status_code == 201
+
+    comments = client.get(f"/api/underduck/lounge/{pid}", headers=author).json()["comments"]
+    # 등장 순서대로 번호가 붙고, 같은 사람이 다시 달아도 번호는 유지된다.
+    assert [c["author_label"] for c in comments] == ["덕민 1", "덕민 2", "덕민 1", "글쓴이"]
+    assert all(c["author"] is None for c in comments)
+
+    # 다른 글에서는 번호가 처음부터 다시 매겨진다(글을 여러 개 써도 추적되지 않도록).
+    pid2 = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "chat", "title": "두 번째", "body": "본문"}).json()["id"]
+    client.post(f"/api/underduck/lounge/{pid2}/comments", headers=cat, json={"message": "네"})
+    c2 = client.get(f"/api/underduck/lounge/{pid2}", headers=author).json()["comments"]
+    assert c2[0]["author_label"] == "덕민 1"   # 앞 글에서는 "덕민 2" 였던 사람
+
+
+def test_lounge_emoticon_only_comment(client):
+    author = _lounge_member(client, "lounge-1", "홍길동")
+    pid = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "chat", "title": "제목", "body": "본문"}).json()["id"]
+
+    # 이모티콘만 있어도 댓글이다.
+    r = client.post(f"/api/underduck/lounge/{pid}/comments", headers=author,
+                    json={"emoticon": "me-too"})
+    assert r.status_code == 201 and r.json()["emoticon"] == "me-too"
+    assert r.json()["message"] is None
+
+    # 둘 다 없으면 거부.
+    assert client.post(f"/api/underduck/lounge/{pid}/comments", headers=author,
+                       json={"message": "   "}).status_code == 400
+    # id 형식이 아니면 422 (경로·URL 주입 방지).
+    assert client.post(f"/api/underduck/lounge/{pid}/comments", headers=author,
+                       json={"emoticon": "../hack.png"}).status_code == 422
+
+
+def test_lounge_admin_reply_and_permissions(client):
+    author = _lounge_member(client, "lounge-1", "홍길동")
+    other = _lounge_member(client, "lounge-2", "김철수")
+    client.post("/api/underduck/users", headers=H, json={
+        "kakao_id": "lounge-admin", "nickname": "임재준", "profile_image": ""})
+    admin = {**H, "X-Underduck-User": "lounge-admin", "X-Underduck-Role": "admin"}
+
+    pid = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "suggestion", "title": "주차", "body": "자리가 없어요"}).json()["id"]
+
+    # 회원은 상태·답변을 못 바꾼다.
+    assert client.patch(f"/api/underduck/lounge/{pid}", headers=other,
+                        json={"status": "resolved"}).status_code == 403
+    # 바꿀 내용이 없으면 400.
+    assert client.patch(f"/api/underduck/lounge/{pid}", headers=admin, json={}).status_code == 400
+    # 모르는 상태값은 422.
+    assert client.patch(f"/api/underduck/lounge/{pid}", headers=admin,
+                        json={"status": "nope"}).status_code == 422
+
+    r = client.patch(f"/api/underduck/lounge/{pid}", headers=admin,
+                     json={"status": "resolved", "admin_reply": "뒷문을 엽니다"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "resolved"
+    # 답변자 이름은 공개해도 되는 정보다 — 회원에게도 보인다.
+    assert client.get(f"/api/underduck/lounge/{pid}", headers=other).json()["admin_reply_author"] == "임재준"
+
+    # 남의 글은 못 지우고, 본인·운영진은 지운다.
+    assert client.delete(f"/api/underduck/lounge/{pid}", headers=other).status_code == 403
+    assert client.delete(f"/api/underduck/lounge/{pid}", headers=author).status_code == 200
+    assert client.get(f"/api/underduck/lounge/{pid}", headers=author).status_code == 404
+
+
+def test_lounge_requires_identity(client):
+    # 신원 헤더 없이는 쓸 수 없다 — "운영진은 누가 썼는지 안다"가 성립해야 하므로.
+    assert client.post("/api/underduck/lounge", headers=H, json={
+        "category": "chat", "title": "익명", "body": "본문"}).status_code == 401
+    # 로스터에 이름이 없는 사용자도 막는다.
+    ghost = {**H, "X-Underduck-User": "ghost", "X-Underduck-Role": "member"}
+    assert client.post("/api/underduck/lounge", headers=ghost, json={
+        "category": "chat", "title": "유령", "body": "본문"}).status_code == 400

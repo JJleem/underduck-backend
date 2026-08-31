@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
@@ -461,3 +461,58 @@ class GalleryCommentCreate(BaseModel):
     kakao_id: KakaoId
     author: Name
     message: Body
+
+
+# ── lounge (사랑방) ────────────────────────────────────────────────
+# 이 게시판만 **응답에서 실명을 지운다**. 그래서 Out 모델을 ORM 에서 그대로
+# model_validate 하지 않고 routers/lounge.py 가 필드를 하나씩 채운다 —
+# 실수로 실명이 새려면 명시적으로 한 줄을 써야 하도록.
+LoungeCategory = Literal["suggestion", "chat"]
+LoungeStatus = Literal["received", "reviewing", "resolved", "declined"]
+# 이모티콘 id. 그림 파일 이름이자 프론트 레지스트리 키다.
+EmoticonId = Annotated[str, Field(max_length=50, pattern=r"^[a-z0-9-]+$")]
+
+
+class LoungeCommentOut(BaseModel):
+    id: int
+    author_label: str          # "글쓴이" · "덕민 1" · "운영진"
+    author: str | None = None  # 실명 — 운영진 요청에만 채워진다
+    mine: bool = False
+    message: str | None = None
+    emoticon: str | None = None
+    created_at: datetime | None = None
+
+
+class LoungePostOut(BaseModel):
+    id: int
+    category: str
+    title: str
+    body: str | None = None    # 목록 응답에는 넣지 않는다
+    status: str
+    author_label: str
+    author: str | None = None
+    mine: bool = False
+    comment_count: int = 0
+    admin_reply: str | None = None
+    admin_reply_author: str | None = None
+    admin_reply_at: datetime | None = None
+    created_at: datetime | None = None
+    comments: list[LoungeCommentOut] | None = None
+
+
+class LoungePostCreate(BaseModel):
+    # 작성자는 받지 않는다 — 신원 헤더에서 서버가 채운다(사칭 차단).
+    category: LoungeCategory
+    title: Title
+    body: Body
+
+
+class LoungePostPatch(BaseModel):
+    """운영진 전용. 둘 다 없으면 라우터가 400."""
+    status: LoungeStatus | None = None
+    admin_reply: Body | None = None
+
+
+class LoungeCommentCreate(BaseModel):
+    message: Body | None = None
+    emoticon: EmoticonId | None = None
