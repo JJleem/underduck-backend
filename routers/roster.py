@@ -42,6 +42,8 @@ def update_pref_pos(
 @router.post("", response_model=schemas.RosterOut, status_code=201, dependencies=[Depends(require_admin)])
 def create_roster(body: schemas.RosterCreate, db: Session = Depends(get_db)):
     r = Roster(no=body.no, name=body.name, pos=body.pos, status=body.status)
+    if body.memo is not None:
+        r.memo = body.memo.strip().lower() or None
     db.add(r)
     db.commit()
     db.refresh(r)
@@ -50,11 +52,14 @@ def create_roster(body: schemas.RosterCreate, db: Session = Depends(get_db)):
 
 @router.put("/{roster_id}", response_model=schemas.RosterOut, dependencies=[Depends(require_admin)])
 def update_roster(roster_id: int, body: schemas.RosterCreate, db: Session = Depends(get_db)):
-    # roster_id 행만 no/name/pos/status 갱신 (memo는 미전송이므로 기존 값 유지)
+    # roster_id 행만 갱신. memo(주장 역할)는 **보냈을 때만** 바꾼다 —
+    # 안 보내면 기존 값을 유지해, memo 를 모르는 옛 클라이언트가 역할을 지우지 않는다.
     r = db.get(Roster, roster_id)
     if r is None:
         raise HTTPException(status_code=404, detail="roster not found")
     r.no, r.name, r.pos, r.status = body.no, body.name, body.pos, body.status
+    if body.memo is not None:
+        r.memo = body.memo.strip().lower() or None
     db.commit()
     db.refresh(r)
     return r

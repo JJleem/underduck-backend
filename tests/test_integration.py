@@ -551,6 +551,31 @@ def test_match_likers(client):
 
 
 
+
+def test_roster_captain_memo(client):
+    """주장 역할(memo)은 보냈을 때만 바뀐다 — 옛 클라이언트가 역할을 지우면 안 된다."""
+    admin = {**H, "X-Underduck-User": "roster-admin", "X-Underduck-Role": "admin"}
+    rid = client.post("/api/underduck/roster", headers=admin, json={
+        "no": "9", "name": "금상덕", "pos": "FW", "status": "활동", "memo": "C"}).json()["id"]
+    # 대소문자는 눕혀서 저장한다(화면은 소문자 c/vc 로 읽는다).
+    assert client.get("/api/underduck/roster", headers=H).json()[0]["memo"] == "c"
+
+    # memo 를 안 보내면 그대로 유지.
+    client.put(f"/api/underduck/roster/{rid}", headers=admin, json={
+        "no": "9", "name": "금상덕", "pos": "ST", "status": "활동"})
+    assert client.get("/api/underduck/roster", headers=H).json()[0]["memo"] == "c"
+
+    # 빈 문자열을 보내면 해제.
+    client.put(f"/api/underduck/roster/{rid}", headers=admin, json={
+        "no": "9", "name": "금상덕", "pos": "ST", "status": "활동", "memo": ""})
+    assert client.get("/api/underduck/roster", headers=H).json()[0]["memo"] is None
+
+    # 부주장으로 지정.
+    client.put(f"/api/underduck/roster/{rid}", headers=admin, json={
+        "no": "9", "name": "금상덕", "pos": "ST", "status": "활동", "memo": "vc"})
+    assert client.get("/api/underduck/roster", headers=H).json()[0]["memo"] == "vc"
+
+
 def test_feedback_and_vote_comment_emoticon(client):
     """경기 댓글·투표 댓글도 사랑방과 같은 이모티콘 체계를 쓴다."""
     mid = _make_match(client)

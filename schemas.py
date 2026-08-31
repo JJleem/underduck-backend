@@ -211,6 +211,10 @@ class RosterCreate(BaseModel):
     name: Name
     pos: Short
     status: Short
+    # 주장 역할: "c"(주장) · "vc"(부주장) · ""(없음).
+    # **안 보내면 기존 값을 유지한다** — memo 를 모르는 옛 클라이언트가 역할을
+    # 지워버리지 않게. 빈 문자열을 보내면 해제된다.
+    memo: Short | None = None
 
 
 class RosterPrefPosUpdate(BaseModel):
