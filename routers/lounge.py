@@ -65,6 +65,7 @@ def _post_out(
     return schemas.LoungePostOut(
         id=p.id,
         category=p.category,
+        icon=p.icon,
         title=p.title,
         body=p.body if with_body else None,
         status=p.status,
@@ -164,6 +165,7 @@ def create_post(
         kakao_id=kakao_id,
         author=author,
         category=body.category,
+        icon=body.icon,
         title=body.title.strip(),
         body=body.body.strip(),
         status="received",

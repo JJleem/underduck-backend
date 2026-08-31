@@ -609,6 +609,27 @@ def test_lounge_comment_labels_are_per_post(client):
     assert c2[0]["author_label"] == "덕민 1"   # 앞 글에서는 "덕민 2" 였던 사람
 
 
+def test_lounge_post_icon(client):
+    author = _lounge_member(client, "lounge-1", "홍길동")
+    # 아이콘은 선택 — 없어도 글이 써진다.
+    plain = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "chat", "title": "아이콘 없음", "body": "본문"})
+    assert plain.status_code == 201 and plain.json()["icon"] is None
+
+    r = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "chat", "icon": "duck", "title": "아이콘 있음", "body": "본문"})
+    assert r.status_code == 201 and r.json()["icon"] == "duck"
+
+    pid = r.json()["id"]
+    # 목록·상세 양쪽에 실려 나온다(목록에서 제목 앞에 그린다).
+    assert client.get(f"/api/underduck/lounge/{pid}", headers=author).json()["icon"] == "duck"
+    assert client.get("/api/underduck/lounge", headers=author).json()[0]["icon"] == "duck"
+
+    # 댓글 이모티콘과 같은 id 규칙 — 경로 주입은 막는다.
+    assert client.post("/api/underduck/lounge", headers=author, json={
+        "category": "chat", "icon": "../hack.png", "title": "x", "body": "y"}).status_code == 422
+
+
 def test_lounge_emoticon_only_comment(client):
     author = _lounge_member(client, "lounge-1", "홍길동")
     pid = client.post("/api/underduck/lounge", headers=author, json={

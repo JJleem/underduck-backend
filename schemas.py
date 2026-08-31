@@ -486,6 +486,7 @@ class LoungeCommentOut(BaseModel):
 class LoungePostOut(BaseModel):
     id: int
     category: str
+    icon: str | None = None
     title: str
     body: str | None = None    # 목록 응답에는 넣지 않는다
     status: str
@@ -503,6 +504,7 @@ class LoungePostOut(BaseModel):
 class LoungePostCreate(BaseModel):
     # 작성자는 받지 않는다 — 신원 헤더에서 서버가 채운다(사칭 차단).
     category: LoungeCategory
+    icon: EmoticonId | None = None
     title: Title
     body: Body
 

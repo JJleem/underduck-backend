@@ -254,6 +254,8 @@ class LoungePost(Base):
     kakao_id: Mapped[str] = mapped_column(String(64), index=True)  # 작성자 신원(소유권·라벨용)
     author: Mapped[str] = mapped_column(String(100))               # 실명 — 운영진에게만 노출
     category: Mapped[str] = mapped_column(String(20))              # suggestion | chat
+    # 제목 앞에 붙는 아이콘(노션의 페이지 아이콘). 댓글 이모티콘과 같은 id 체계를 쓴다.
+    icon: Mapped[str | None] = mapped_column(String(50))
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     # 처리 상태. chat 글에는 의미가 없다(화면도 건의에만 뱃지를 그린다).
