@@ -569,7 +569,8 @@ def test_lounge_hides_real_names_from_members(client):
     detail = client.get(f"/api/underduck/lounge/{pid}", headers=author).json()
     assert detail["author"] is None
     assert "kakao_id" not in detail
-    assert detail["author_label"] == "글쓴이"
+    # 글의 작성자 자리는 목록이든 상세든 "익명" — "글쓴이"는 댓글에만 붙는 관계 표시다.
+    assert detail["author_label"] == "익명"
     assert detail["mine"] is True
 
     # 목록은 본문 없이, 작성자는 전부 "익명".

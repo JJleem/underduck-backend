@@ -33,15 +33,18 @@ router = APIRouter(
 
 # 익명 이름의 접두어. 바꾸고 싶으면 여기만 고치면 된다.
 ANON_PREFIX = "덕민"
+# 글의 작성자 자리에는 목록이든 상세든 언제나 "익명"이 온다.
+POST_LABEL = "익명"
+# "글쓴이"는 **댓글에만** 붙는 관계 표시다 — 이 댓글을 단 사람이 글쓴이라는 뜻.
+# 글 헤더에까지 쓰면 "글쓴이 · 3시간 전"이 되어 하나 마나 한 말이 된다.
 AUTHOR_LABEL = "글쓴이"
-LIST_LABEL = "익명"
 
 
 def _labels(post: LoungePost, comments: list[LoungeComment]) -> dict[str, str]:
     """이 글 안에서만 통하는 kakao_id → 표시 이름.
 
-    글쓴이는 언제나 "글쓴이"고, 나머지는 **댓글에 처음 등장한 순서대로** 번호를 받는다.
-    (한 사람이 여러 번 달아도 번호는 하나로 유지된다)
+    글쓴이는 번호를 받지 않고 언제나 "글쓴이"다. 나머지는 **댓글에 처음 등장한
+    순서대로** 번호를 받는다(한 사람이 여러 번 달아도 번호는 하나로 유지된다).
     """
     labels = {post.kakao_id: AUTHOR_LABEL}
     n = 0
@@ -99,7 +102,7 @@ def list_posts(c: Caller = Depends(caller), db: Session = Depends(get_db)):
     posts = db.scalars(select(LoungePost).order_by(LoungePost.id.desc())).all()
     return [
         _post_out(
-            p, c, label=LIST_LABEL, comment_count=counts.get(p.id, 0), with_body=False
+            p, c, label=POST_LABEL, comment_count=counts.get(p.id, 0), with_body=False
         )
         for p in posts
     ]
@@ -121,7 +124,7 @@ def get_post(post_id: int, c: Caller = Depends(caller), db: Session = Depends(ge
     comments = [
         schemas.LoungeCommentOut(
             id=r.id,
-            author_label=labels.get(r.kakao_id, LIST_LABEL),
+            author_label=labels.get(r.kakao_id, POST_LABEL),
             author=r.author if c.is_admin else None,
             mine=bool(c.kakao_id) and c.kakao_id == r.kakao_id,
             message=r.message,
@@ -133,7 +136,7 @@ def get_post(post_id: int, c: Caller = Depends(caller), db: Session = Depends(ge
     return _post_out(
         p,
         c,
-        label=AUTHOR_LABEL,
+        label=POST_LABEL,
         comment_count=len(rows),
         with_body=True,
         comments=comments,
@@ -174,7 +177,7 @@ def create_post(
     db.add(p)
     db.commit()
     db.refresh(p)
-    return _post_out(p, c, label=AUTHOR_LABEL, comment_count=0, with_body=True)
+    return _post_out(p, c, label=POST_LABEL, comment_count=0, with_body=True)
 
 
 @router.patch("/{post_id}", response_model=schemas.LoungePostOut)
@@ -210,7 +213,7 @@ def update_post(
     count = db.scalar(
         select(func.count(LoungeComment.id)).where(LoungeComment.post_id == post_id)
     )
-    return _post_out(p, admin, label=AUTHOR_LABEL, comment_count=count or 0, with_body=True)
+    return _post_out(p, admin, label=POST_LABEL, comment_count=count or 0, with_body=True)
 
 
 @router.delete("/{post_id}")
@@ -262,7 +265,7 @@ def create_comment(
     ).all()
     return schemas.LoungeCommentOut(
         id=row.id,
-        author_label=_labels(p, rows).get(row.kakao_id, LIST_LABEL),
+        author_label=_labels(p, rows).get(row.kakao_id, POST_LABEL),
         author=row.author if c.is_admin else None,
         mine=True,
         message=row.message,
