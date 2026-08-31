@@ -475,6 +475,7 @@ EmoticonId = Annotated[str, Field(max_length=50, pattern=r"^[a-z0-9-]+$")]
 
 class LoungeCommentOut(BaseModel):
     id: int
+    parent_id: int | None = None
     author_label: str          # "글쓴이" · "덕민 1" · "운영진"
     author: str | None = None  # 실명 — 운영진 요청에만 채워진다
     mine: bool = False
@@ -518,3 +519,4 @@ class LoungePostPatch(BaseModel):
 class LoungeCommentCreate(BaseModel):
     message: Body | None = None
     emoticon: EmoticonId | None = None
+    parent_id: int | None = None

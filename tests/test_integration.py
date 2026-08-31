@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from db.connection import Base, get_db
 from main import app
+from routers.lounge import ANON_NAMES, _alias_pool
 
 H = {"X-Underduck-Secret": "test-secret"}
 
@@ -597,17 +598,63 @@ def test_lounge_comment_labels_are_per_post(client):
         assert client.post(f"/api/underduck/lounge/{pid}/comments", headers=who,
                            json={"message": msg}).status_code == 201
 
-    comments = client.get(f"/api/underduck/lounge/{pid}", headers=author).json()["comments"]
-    # 등장 순서대로 번호가 붙고, 같은 사람이 다시 달아도 번호는 유지된다.
-    assert [c["author_label"] for c in comments] == ["덕민 1", "덕민 2", "덕민 1", "글쓴이"]
-    assert all(c["author"] is None for c in comments)
+    labels = [c["author_label"] for c in
+              client.get(f"/api/underduck/lounge/{pid}", headers=author).json()["comments"]]
+    # 이름 풀에서 하나씩 받고, 같은 사람이 다시 달아도 이름은 유지된다. 글쓴이는 "글쓴이".
+    assert labels[0] in ANON_NAMES and labels[1] in ANON_NAMES
+    assert labels[0] != labels[1]          # 서로 다른 사람은 다른 이름
+    assert labels[2] == labels[0]          # bob 이 다시 달아도 같은 이름
+    assert labels[3] == "글쓴이"
+    assert all(c["author"] is None for c in
+               client.get(f"/api/underduck/lounge/{pid}", headers=author).json()["comments"])
 
-    # 다른 글에서는 번호가 처음부터 다시 매겨진다(글을 여러 개 써도 추적되지 않도록).
+    # 다른 글에서는 이름이 새로 매겨진다(글을 여러 개 써도 추적되지 않도록).
     pid2 = client.post("/api/underduck/lounge", headers=author, json={
         "category": "chat", "title": "두 번째", "body": "본문"}).json()["id"]
     client.post(f"/api/underduck/lounge/{pid2}/comments", headers=cat, json={"message": "네"})
     c2 = client.get(f"/api/underduck/lounge/{pid2}", headers=author).json()["comments"]
-    assert c2[0]["author_label"] == "덕민 1"   # 앞 글에서는 "덕민 2" 였던 사람
+    assert c2[0]["author_label"] in ANON_NAMES
+    assert c2[0]["author_label"] != labels[1]   # 앞 글에서 cat 이 받았던 이름과 다르다
+
+
+def test_lounge_alias_pool_is_per_post(client):
+    # 같은 글이면 몇 번을 불러도 순서가 같고, 글이 바뀌면 순서가 달라진다.
+    assert _alias_pool(7) == _alias_pool(7)
+    assert _alias_pool(7) != _alias_pool(8)
+    assert sorted(_alias_pool(7)) == sorted(ANON_NAMES)   # 빠지거나 겹치는 이름 없음
+    assert len(set(ANON_NAMES)) == len(ANON_NAMES)
+
+
+def test_lounge_comment_replies(client):
+    author = _lounge_member(client, "lounge-1", "홍길동")
+    bob = _lounge_member(client, "lounge-2", "김철수")
+    pid = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "chat", "title": "제목", "body": "본문"}).json()["id"]
+
+    root = client.post(f"/api/underduck/lounge/{pid}/comments", headers=bob,
+                       json={"message": "원댓글"}).json()
+    assert root["parent_id"] is None
+
+    reply = client.post(f"/api/underduck/lounge/{pid}/comments", headers=author,
+                        json={"message": "답글", "parent_id": root["id"]})
+    assert reply.status_code == 201 and reply.json()["parent_id"] == root["id"]
+
+    # 대댓글에 또 달면 부모로 접어 올린다 — 깊이는 1단까지.
+    deep = client.post(f"/api/underduck/lounge/{pid}/comments", headers=bob,
+                       json={"message": "답글의 답글", "parent_id": reply.json()["id"]})
+    assert deep.status_code == 201 and deep.json()["parent_id"] == root["id"]
+
+    # 다른 글의 댓글을 부모로 지정할 수 없다.
+    other = client.post("/api/underduck/lounge", headers=author, json={
+        "category": "chat", "title": "다른 글", "body": "본문"}).json()["id"]
+    assert client.post(f"/api/underduck/lounge/{other}/comments", headers=bob,
+                       json={"message": "x", "parent_id": root["id"]}).status_code == 404
+
+    # 부모를 지우면 딸린 답글도 같이 사라진다.
+    assert len(client.get(f"/api/underduck/lounge/{pid}", headers=author).json()["comments"]) == 3
+    assert client.delete(f"/api/underduck/lounge/{pid}/comments/{root['id']}",
+                         headers=bob).status_code == 200
+    assert client.get(f"/api/underduck/lounge/{pid}", headers=author).json()["comments"] == []
 
 
 def test_lounge_post_icon(client):

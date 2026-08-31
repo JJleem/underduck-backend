@@ -273,6 +273,8 @@ class LoungeComment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     post_id: Mapped[int] = mapped_column(Integer, index=True)
+    # 대댓글이면 부모 댓글 id. 깊이는 1단까지만 — 대댓글의 대댓글은 부모로 접어 올린다.
+    parent_id: Mapped[int | None] = mapped_column(Integer, index=True)
     kakao_id: Mapped[str] = mapped_column(String(64))
     author: Mapped[str] = mapped_column(String(100))  # 실명 — 운영진에게만 노출
     message: Mapped[str | None] = mapped_column(Text)

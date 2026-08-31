@@ -13,6 +13,7 @@
 그래서 Out 스키마를 ORM 에서 `model_validate` 로 통째로 만들지 않는다.
 필드를 하나씩 채워야 실명이 새려면 명시적으로 한 줄을 써야 한다.
 """
+import hashlib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -31,8 +32,28 @@ router = APIRouter(
     dependencies=[Depends(require_underduck)],
 )
 
-# 익명 이름의 접두어. 바꾸고 싶으면 여기만 고치면 된다.
-ANON_PREFIX = "덕민"
+# 댓글에 쓰는 익명 이름 풀.
+#
+# 규칙: 팀원 누구도 지칭하지 않고, 놀림으로 읽힐 여지가 없을 것. 그래서 실력·출전
+# 시간처럼 실제로 사람마다 다른 것은 넣지 않았다(익명이라도 콕 집힌 기분이 든다).
+# 아마추어 축구면 다 겪는 것, 오리, 그리고 실없는 것들로 채웠다.
+#
+# ⚠️ 이 목록을 고치면 **이미 올라온 글의 이름도 같이 바뀐다** — 이름은 저장하지 않고
+#    그때그때 계산한다. 사람이 뒤바뀌지는 않으니(글 안에서는 여전히 1:1) 표시만 달라진다.
+ANON_NAMES = [
+    # 오리
+    "물갈퀴", "꽥꽥이", "뒤뚱이", "부리부리", "깃털부자", "물장구대장",
+    "삑삑이", "백조지망생", "청둥오리", "목욕중인오리", "알품은오리", "오리발내밀기",
+    # 축구
+    "무회전킥", "왼발의추억", "오버헤드꿈나무", "헤딩은무서워", "코너킥장인",
+    "프리킥연습생", "논스톱발리", "크로스바친구", "골대와친함", "드리블배우는중",
+    "골닷컴", "빌드업중",
+    # 경기 전후
+    "파스냄새폴폴", "물통지킴이", "스트레칭중", "아이싱중", "근육통환자",
+    "물집장인", "워밍업장인", "축구화지름신", "정강이보호대", "양말두겹",
+    "인조잔디알러지", "하프타임간식", "경기전라면금지", "골넣고싶다",
+    "벤치의철학자", "샤워실1등",
+]
 # 글의 작성자 자리에는 목록이든 상세든 언제나 "익명"이 온다.
 POST_LABEL = "익명"
 # "글쓴이"는 **댓글에만** 붙는 관계 표시다 — 이 댓글을 단 사람이 글쓴이라는 뜻.
@@ -40,19 +61,34 @@ POST_LABEL = "익명"
 AUTHOR_LABEL = "글쓴이"
 
 
+def _alias_pool(post_id: int) -> list[str]:
+    """이 글에서 쓸 이름 순서.
+
+    글 id 로 섞는다 — 같은 글에서는 언제 불러도 같은 순서라 이름이 안 흔들리고,
+    글이 바뀌면 순서도 바뀌어 **같은 사람이 글마다 다른 이름**을 받는다.
+    (순서대로 그냥 나눠 주면 첫 댓글자는 어느 글에서나 같은 이름이 된다)
+
+    random.shuffle 대신 해시 정렬을 쓰는 이유: 파이썬 버전이 바뀌어도 결과가 같다.
+    """
+    return sorted(ANON_NAMES, key=lambda n: hashlib.md5(f"{post_id}:{n}".encode()).hexdigest())
+
+
 def _labels(post: LoungePost, comments: list[LoungeComment]) -> dict[str, str]:
     """이 글 안에서만 통하는 kakao_id → 표시 이름.
 
-    글쓴이는 번호를 받지 않고 언제나 "글쓴이"다. 나머지는 **댓글에 처음 등장한
-    순서대로** 번호를 받는다(한 사람이 여러 번 달아도 번호는 하나로 유지된다).
+    글쓴이는 언제나 "글쓴이"다. 나머지는 **댓글에 처음 등장한 순서대로** 풀에서
+    하나씩 받는다(한 사람이 여러 번 달아도 이름은 하나로 유지된다).
     """
     labels = {post.kakao_id: AUTHOR_LABEL}
+    pool = _alias_pool(post.id)
     n = 0
     for c in comments:
         if c.kakao_id in labels:
             continue
+        name = pool[n % len(pool)]
+        # 풀보다 사람이 많으면 한 바퀴 더 돈다 — 이름이 겹치면 안 되므로 숫자를 붙인다.
+        labels[c.kakao_id] = name if n < len(pool) else f"{name} {n // len(pool) + 1}"
         n += 1
-        labels[c.kakao_id] = f"{ANON_PREFIX} {n}"
     return labels
 
 
@@ -124,6 +160,7 @@ def get_post(post_id: int, c: Caller = Depends(caller), db: Session = Depends(ge
     comments = [
         schemas.LoungeCommentOut(
             id=r.id,
+            parent_id=r.parent_id,
             author_label=labels.get(r.kakao_id, POST_LABEL),
             author=r.author if c.is_admin else None,
             mine=bool(c.kakao_id) and c.kakao_id == r.kakao_id,
@@ -244,9 +281,19 @@ def create_comment(
     if not message and not body.emoticon:
         raise HTTPException(status_code=400, detail="댓글 내용이나 이모티콘이 필요합니다.")
 
+    # 대댓글이면 부모를 확인한다. 깊이는 1단까지만 — 대댓글에 또 달면 부모로 접어
+    # 올린다(막아버리면 "답글의 답글"을 쓰려던 사람이 갈 데가 없다).
+    parent_id = None
+    if body.parent_id is not None:
+        parent = db.get(LoungeComment, body.parent_id)
+        if parent is None or parent.post_id != post_id:
+            raise HTTPException(status_code=404, detail="parent comment not found")
+        parent_id = parent.parent_id or parent.id
+
     kakao_id, author = _require_author(c, db)
     row = LoungeComment(
         post_id=post_id,
+        parent_id=parent_id,
         kakao_id=kakao_id,
         author=author,
         message=message,
@@ -265,6 +312,7 @@ def create_comment(
     ).all()
     return schemas.LoungeCommentOut(
         id=row.id,
+        parent_id=row.parent_id,
         author_label=_labels(p, rows).get(row.kakao_id, POST_LABEL),
         author=row.author if c.is_admin else None,
         mine=True,
@@ -285,6 +333,9 @@ def delete_comment(
     if row is None or row.post_id != post_id:
         raise HTTPException(status_code=404, detail="comment not found")
     assert_owner_or_admin(c, row.kakao_id)
+    # 부모를 지우면 딸린 대댓글도 함께 사라진다. 남겨두면 무슨 말에 대한
+    # 답인지 알 수 없는 댓글만 떠돈다.
+    db.query(LoungeComment).filter(LoungeComment.parent_id == row.id).delete()
     db.delete(row)
     db.commit()
     return {"deleted": 1}
