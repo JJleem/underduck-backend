@@ -67,10 +67,13 @@ def _sync_attendees(match_id: int, db: Session):
     if m is None:
         return
     rows = db.scalars(
-        select(AttendanceVote).where(
+        select(AttendanceVote)
+        .where(
             AttendanceVote.match_id == match_id,
             AttendanceVote.response == "참석",
         )
+        # 화면 명단과 같은 순서로 — 참석을 누른 시각이 곧 엔트리 순서다.
+        .order_by(AttendanceVote.timestamp, AttendanceVote.id)
     ).all()
     m.attendees = ",".join(r.nickname.strip() for r in rows if r.nickname)
 
