@@ -552,6 +552,27 @@ def test_match_likers(client):
 
 
 
+
+def test_attendance_timestamp_only_moves_on_change(client):
+    """명단이 이 시각으로 정렬된다 — 같은 항목을 다시 눌렀다고 뒤로 밀리면 안 된다."""
+    mid = _make_match(client)
+    body = {"match_id": mid, "kakao_id": "k1", "nickname": "홍길동", "response": "미정"}
+    first = client.post("/api/underduck/attendance", headers=H, json=body).json()["timestamp"]
+
+    # 같은 응답을 다시 보내면 시각 그대로.
+    again = client.post("/api/underduck/attendance", headers=H, json=body).json()["timestamp"]
+    assert again == first
+
+    # 응답이 바뀌면 그때 갱신된다(미정 → 참석이면 "참석을 누른 시각").
+    moved = client.post("/api/underduck/attendance", headers=H,
+                        json={**body, "response": "참석"}).json()["timestamp"]
+    assert moved != first
+
+    # 참석을 다시 눌러도 그대로.
+    assert client.post("/api/underduck/attendance", headers=H,
+                       json={**body, "response": "참석"}).json()["timestamp"] == moved
+
+
 def test_roster_captain_memo(client):
     """주장 역할(memo)은 보냈을 때만 바뀐다 — 옛 클라이언트가 역할을 지우면 안 된다."""
     admin = {**H, "X-Underduck-User": "roster-admin", "X-Underduck-Role": "admin"}

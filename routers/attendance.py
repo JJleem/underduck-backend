@@ -42,9 +42,16 @@ def upsert_attendance(
     if row is None:
         row = AttendanceVote(match_id=body.match_id, kakao_id=kakao_id)
         db.add(row)
+        changed = True
+    else:
+        changed = row.response != body.response
     row.nickname = resolve_name(db, body.nickname.strip())
     row.response = body.response
-    row.timestamp = datetime.now(timezone.utc)
+    # timestamp 는 **응답이 실제로 바뀔 때만** 갱신한다.
+    # 화면은 이 값으로 명단을 정렬하는데(참석 누른 순서), 같은 항목을 다시 눌렀다고
+    # 시각이 밀리면 이미 손 든 사람이 맨 뒤로 간다.
+    if changed:
+        row.timestamp = datetime.now(timezone.utc)
 
     # 투표 변경 시 matches.attendees(엔트리) 실시간 반영
     _sync_attendees(body.match_id, db)
