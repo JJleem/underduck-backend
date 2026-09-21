@@ -175,9 +175,10 @@ def test_no_season_param_is_career_total(season_client):
     칭호의 통산 등급이 이 모드에 의존하므로 기본 동작이 바뀌면 안 된다.
     """
     career = _by_name(season_client, "/api/underduck/stats")
-    # 0·1·3번 = 3골. 날짜 없는 3번도 통산에는 들어간다.
+    # 득점은 0·1·3번 = 3골. 날짜 없는 3번도 통산에는 들어간다.
     assert career["홍길동"]["goals"] == 3
-    assert career["홍길동"]["apps"] == 3
+    # 출전은 네 경기 전부 — 2번은 골이 김철수일 뿐 홍길동도 명단에 있다.
+    assert career["홍길동"]["apps"] == 4
     assert career["김철수"]["goals"] == 1
 
 
