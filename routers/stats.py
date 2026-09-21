@@ -1,10 +1,11 @@
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 import schemas
+import seasons
 from db.connection import get_db
 from db.models import Match, Roster
 from deps import require_underduck
@@ -55,7 +56,27 @@ def _mom_names(raw: str | None) -> list[str]:
 
 
 @router.get("", response_model=list[schemas.StatOut])
-def list_stats(db: Session = Depends(get_db)):
+def list_stats(
+    db: Session = Depends(get_db),
+    season: str | None = Query(
+        None,
+        description="시즌 id(seasons.SEASONS). 생략하면 통산 — 전 기간 누적.",
+    ),
+):
+    """선수별 집계. season 을 주면 그 시즌 경기만 센다.
+
+    season 을 생략하면 지금까지와 똑같이 전 기간을 센다(통산). 칭호의 통산 등급과
+    누적 기록이 이 모드를 쓰므로 기본 동작은 바꾸지 않는다.
+    """
+    # 모르는 시즌 id 는 조용히 통산으로 떨어뜨리지 않는다. 그러면 프론트가 시즌
+    # 화면에 통산 숫자를 띄우고도 아무도 모른다 — 프론트/백엔드 시즌 표가 어긋난
+    # 순간 바로 터지는 편이 낫다.
+    if season is not None and season not in seasons.SEASON_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"알 수 없는 시즌 id: {season!r} (가능: {sorted(seasons.SEASON_IDS)})",
+        )
+
     apps: dict[str, int] = defaultdict(int)
     goals: dict[str, int] = defaultdict(int)
     assists: dict[str, int] = defaultdict(int)
@@ -73,6 +94,9 @@ def list_stats(db: Session = Depends(get_db)):
         # 그대로 세면 경기 전에 출전 수가 올라간다(8/8 자체전 명단 12명이 실제로
         # +1 씩 잡혀 있었다). 기록은 경기가 끝난 뒤에 생겨야 한다.
         if (m.result or "").strip() == "예정":
+            continue
+        # 시즌 필터. 날짜를 못 읽는 경기는 어느 시즌에도 안 들어간다(통산에는 그대로 남는다).
+        if season is not None and not seasons.is_in_season(m.date, season):
             continue
         for name in _names(m.goals):
             goals[name] += 1

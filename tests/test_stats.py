@@ -111,3 +111,120 @@ def test_upcoming_not_counted(client):
     by = {r["name"]: r for r in rows}
     assert by["홍길동"]["apps"] == 2   # 0·1번만. 3(야유회)·4(예정) 제외
     assert by["박영희"]["apps"] == 1
+
+
+# ───────────────────────── 시즌 필터 ─────────────────────────
+
+
+@pytest.fixture()
+def season_client():
+    """시즌 경계를 사이에 둔 경기들. 26-27 개막일은 2026-11-01."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    TestingSession = sessionmaker(bind=engine)
+
+    db = TestingSession()
+    db.add_all([
+        models.Roster(no="7", name="홍길동", pos="FW", status="활동"),
+        models.Roster(no="10", name="김철수", pos="MF", status="활동"),
+    ])
+    db.add_all([
+        # ── 25-26 (경계 이전)
+        models.Match(match_id=0, date="2025-08-10", goals="홍길동",
+                     attendees="홍길동,김철수", mom="홍길동"),
+        models.Match(match_id=1, date="2026-10-31", goals="홍길동",
+                     attendees="홍길동,김철수", mom="김철수"),
+        # ── 26-27 (개막일 당일부터)
+        models.Match(match_id=2, date="2026-11-01", goals="김철수",
+                     assists="홍길동", attendees="홍길동,김철수", mom="김철수"),
+        # ── 날짜 없음: 어느 시즌에도 안 들어가지만 통산에는 남는다
+        models.Match(match_id=3, date=None, goals="홍길동", attendees="홍길동"),
+    ])
+    db.commit()
+
+    app.dependency_overrides[get_db] = lambda: TestingSession()
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def _by_name(client, url):
+    return {r["name"]: r for r in client.get(url, headers=HEADERS).json()}
+
+
+def test_season_param_splits_at_opening_day(season_client):
+    """개막일 당일 경기부터 새 시즌이다."""
+    s2526 = _by_name(season_client, "/api/underduck/stats?season=2526")
+    assert s2526["홍길동"]["goals"] == 2      # 0·1번
+    assert s2526["홍길동"]["apps"] == 2
+    assert s2526["김철수"]["goals"] == 0
+
+    s2627 = _by_name(season_client, "/api/underduck/stats?season=2627")
+    assert s2627["김철수"]["goals"] == 1      # 2번만
+    assert s2627["홍길동"]["goals"] == 0
+    assert s2627["홍길동"]["assists"] == 1
+    assert s2627["홍길동"]["apps"] == 1
+
+
+def test_no_season_param_is_career_total(season_client):
+    """season 을 안 주면 지금까지와 똑같이 전 기간을 센다.
+
+    칭호의 통산 등급이 이 모드에 의존하므로 기본 동작이 바뀌면 안 된다.
+    """
+    career = _by_name(season_client, "/api/underduck/stats")
+    # 0·1·3번 = 3골. 날짜 없는 3번도 통산에는 들어간다.
+    assert career["홍길동"]["goals"] == 3
+    assert career["홍길동"]["apps"] == 3
+    assert career["김철수"]["goals"] == 1
+
+
+def test_undated_match_belongs_to_no_season(season_client):
+    """날짜를 못 읽는 경기는 어느 시즌에도 안 들어간다.
+
+    두 시즌 합이 통산보다 작아지지만, 날짜 없는 경기를 아무 시즌에나 밀어넣어
+    엉뚱한 시즌 순위를 만드는 것보다 낫다.
+    """
+    s2526 = _by_name(season_client, "/api/underduck/stats?season=2526")
+    s2627 = _by_name(season_client, "/api/underduck/stats?season=2627")
+    career = _by_name(season_client, "/api/underduck/stats")
+    assert s2526["홍길동"]["goals"] + s2627["홍길동"]["goals"] == 2
+    assert career["홍길동"]["goals"] == 3
+
+
+def test_unknown_season_id_is_rejected(season_client):
+    """모르는 시즌 id 를 통산으로 떨어뜨리지 않는다.
+
+    조용히 넘어가면 프론트가 시즌 화면에 통산 숫자를 띄우고도 아무도 모른다.
+    프론트(app/lib/seasons.ts)와 백엔드 표가 어긋난 순간 여기서 터져야 한다.
+    """
+    r = season_client.get("/api/underduck/stats?season=9999", headers=HEADERS)
+    assert r.status_code == 400
+    assert "9999" in r.json()["detail"]
+
+
+def test_season_filter_still_excludes_outings_and_upcoming(season_client):
+    """시즌 필터를 걸어도 야유회·예정 제외 규칙은 그대로 살아있다."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    TestingSession = sessionmaker(bind=engine)
+    db = TestingSession()
+    db.add_all([
+        models.Roster(no="7", name="홍길동", pos="FW", status="활동"),
+        models.Match(match_id=0, date="2026-11-02", type="야유회",
+                     goals="바베큐", attendees="홍길동"),
+        models.Match(match_id=1, date="2026-11-09", result="예정",
+                     attendees="홍길동"),
+        models.Match(match_id=2, date="2026-11-16", goals="홍길동",
+                     attendees="홍길동"),
+    ])
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: TestingSession()
+
+    by = _by_name(TestClient(app), "/api/underduck/stats?season=2627")
+    assert "바베큐" not in by
+    assert by["홍길동"]["apps"] == 1   # 2번만
+    assert by["홍길동"]["goals"] == 1
