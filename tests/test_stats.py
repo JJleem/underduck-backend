@@ -118,7 +118,7 @@ def test_upcoming_not_counted(client):
 
 @pytest.fixture()
 def season_client():
-    """시즌 경계를 사이에 둔 경기들. 26-27 개막일은 2026-11-01."""
+    """시즌 경계를 사이에 둔 경기들. 26-27 개막일은 2026-10-25."""
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -136,10 +136,10 @@ def season_client():
         # ── 25-26 (경계 이전)
         models.Match(match_id=0, date="2025-08-10", goals="홍길동",
                      attendees="홍길동,김철수", mom="홍길동"),
-        models.Match(match_id=1, date="2026-10-31", goals="홍길동",
+        models.Match(match_id=1, date="2026-10-24", goals="홍길동",
                      attendees="홍길동,김철수", mom="김철수"),
         # ── 26-27 (개막일 당일부터)
-        models.Match(match_id=2, date="2026-11-01", goals="김철수",
+        models.Match(match_id=2, date="2026-10-25", goals="김철수",
                      assists="홍길동", attendees="홍길동,김철수", mom="김철수"),
         # ── 날짜 없음: 어느 시즌에도 안 들어가지만 통산에는 남는다
         models.Match(match_id=3, date=None, goals="홍길동", attendees="홍길동"),
